@@ -1,0 +1,26 @@
+{
+  "name": "opencode-fusion",
+  "version": "0.1.0",
+  "description": "Multi-model fusion plugin for OpenCode: goal mode, sidekick delegation, reviewer, and dynamic mid-session routing.",
+  "type": "module",
+  "exports": {
+    "./server": {
+      "import": "./dist/server.js"
+    }
+  },
+  "scripts": {
+    "build": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod",
+    "typecheck": "tsc --noEmit",
+    "dev": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod --watch"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "^1.17.11",
+    "effect": "^3.21.2",
+    "zod": "^4.1.8"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.14",
+    "@types/node": "^26.0.1",
+    "typescript": "^5.7.0"
+  }
+}
