@@ -4,7 +4,6 @@ export interface AutoContinueMessage {
   content?: unknown;
   info?: unknown;
   time?: unknown;
-  error?: unknown;
   finish?: unknown;
   [key: string]: unknown;
 }
@@ -42,43 +41,22 @@ function latestMessage(messages: AutoContinueMessage[]): AutoContinueMessage | u
   return ordered.at(-1)?.message;
 }
 
-function interruptedMetadata(value: unknown): boolean {
-  const record = asRecord(value);
-  if (!record) return false;
-  return record.interrupted === true;
-}
-
-function isAbortError(value: unknown): boolean {
-  const error = asRecord(value);
-  if (!error) return false;
-  const data = asRecord(error.data);
-  return error.name === "MessageAbortedError" || data?.message === "Aborted";
-}
-
-function isInterruptedPart(part: unknown): boolean {
-  const record = asRecord(part);
-  if (!record) return false;
-  if (interruptedMetadata(record.metadata)) return true;
-
-  const state = asRecord(record.state);
-  if (!state) return false;
-  if (interruptedMetadata(state.metadata)) return true;
-  return state.error === "Tool execution aborted";
-}
-
+// In the auto-continue path the session is idle, so an assistant message
+// without a finish marker did not complete normally — it was interrupted
+// (e.g. user pressed Esc). Abort can fire the idle event before the
+// message's error field is persisted, so checking finish absence is the
+// reliable signal across all abort timing windows.
 export function isInterruptedAssistantMessage(message: AutoContinueMessage): boolean {
   const role = messageRole(message).toLowerCase();
   if (role !== "assistant") return false;
 
   const info = asRecord(message.info);
-  if (isAbortError(message.error) || isAbortError(info?.error)) return true;
-
-  const parts = Array.isArray(message.parts)
-    ? message.parts
-    : Array.isArray(message.content)
-      ? message.content
-      : [];
-  return parts.some(isInterruptedPart);
+  const finish = typeof message.finish === "string"
+    ? message.finish
+    : typeof info?.finish === "string"
+      ? info.finish
+      : null;
+  return !finish;
 }
 
 export function shouldSkipAutoContinueForMessages(messages: AutoContinueMessage[]): boolean {

@@ -5,6 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, recallMessages, type RecallMessage } from "./recall.js";
+import { extractSidekickTaskId } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -251,7 +252,18 @@ const plugin: Plugin = async (input, options) => {
     async "experimental.session.compacting"(input, output) {
       const g = await goal.getGoal(input.sessionID);
       if (!g) return;
-      output.context.push(goal.compactionContext(g));
+      let sidekickTaskId: string | null = null;
+      try {
+        const raw = await client.session.messages({
+          path: { id: input.sessionID },
+          query: { limit: 80 },
+        } as any);
+        const data = raw?.data ?? raw ?? [];
+        if (Array.isArray(data)) {
+          sidekickTaskId = extractSidekickTaskId(data as RecallMessage[]);
+        }
+      } catch {}
+      output.context.push(goal.compactionContext(g, sidekickTaskId));
     },
 
     async "experimental.compaction.autocontinue"(input, output) {
