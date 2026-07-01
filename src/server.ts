@@ -3,6 +3,7 @@ import type { Plugin, PluginOptions, Hooks } from "@opencode-ai/plugin";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 
 import * as goal from "./goal.js";
+import { normalizeRecallLimit, recallMessages, type RecallMessage } from "./recall.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -56,6 +57,49 @@ const activeContinuations = new Set<string>();
 const plugin: Plugin = async (input, options) => {
   const { sidekick, reviewer } = parseOptions(options);
   const client = input.client as OpencodeClient;
+
+  const recallTools = {
+    recall_history: {
+      description:
+        "Recall prior messages from the current OpenCode session. Use after compaction or when you need exact earlier context. Optional query does a simple case-insensitive keyword filter over message text/tool names. By default tool outputs are summarized; set include_tool_output=true when you need exact tool results.",
+      args: {
+        query: z.string().min(1).max(500).optional().describe("Optional case-insensitive keyword filter."),
+        limit: z.number().int().min(1).max(80).optional().describe("Maximum matching messages to return; default 20, max 80."),
+        include_tool_output: z.boolean().optional().describe("Include tool output content. Default false to keep recall quiet."),
+      },
+      async execute(args: any, context: any) {
+        const limit = normalizeRecallLimit(args.limit);
+        let raw: any;
+        try {
+          raw = await client.session.messages({
+            path: { id: context.sessionID },
+            query: { limit: Math.max(limit * 4, 80) },
+          } as any);
+        } catch (error) {
+          throw new Error(
+            `Failed to recall OpenCode session history for session ${context.sessionID}: ${
+              error instanceof Error ? error.message : String(error)
+            }`,
+          );
+        }
+        const data = raw?.data ?? raw ?? [];
+        if (!Array.isArray(data)) {
+          throw new Error(
+            `Failed to recall OpenCode session history for session ${context.sessionID}: expected message array, got ${typeof data}`,
+          );
+        }
+        return JSON.stringify(
+          recallMessages(data as RecallMessage[], {
+            query: args.query,
+            limit,
+            includeToolOutput: args.include_tool_output === true,
+          }),
+          null,
+          2,
+        );
+      },
+    },
+  };
 
   const goalTools = {
     get_goal: {
@@ -155,7 +199,8 @@ const plugin: Plugin = async (input, options) => {
 
     tool: {
       ...goalTools,
-    },
+      ...recallTools,
+    } as any,
 
     async "experimental.chat.system.transform"(input, output) {
       if (typeof input.sessionID !== "string") return;
