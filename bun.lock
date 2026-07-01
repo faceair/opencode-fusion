@@ -3,7 +3,7 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "opencode-fusion",
+      "name": "@faceair/opencode-fusion",
       "dependencies": {
         "@opencode-ai/plugin": "^1.17.11",
         "effect": "^3.21.2",

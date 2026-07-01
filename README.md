@@ -105,13 +105,13 @@ If you just want a lightweight assistant for quick one-off chats, this is probab
 
 ## Installation
 
-Add the plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc`):
+Add the npm plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc`):
 
 ```jsonc
 {
   "plugin": [
     [
-      "file:///path/to/opencode-fusion",
+      "@faceair/opencode-fusion",
       {
         "sidekick": {
           "model": "provider/model-name",
@@ -122,9 +122,12 @@ Add the plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc`):
         }
       }
     ]
-  ]
+  ],
+  "default_agent": "fusion"
 }
 ```
+
+Restart OpenCode after saving the config. OpenCode installs npm plugins automatically at startup.
 
 | Option | Agent | Description |
 |--------|-------|-------------|
@@ -132,7 +135,7 @@ Add the plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc`):
 | `variant` | sidekick, reviewer | Reasoning effort (`low`, `medium`, `high`, `xhigh`) |
 | `options` | sidekick, reviewer | Provider-specific options |
 
-If `model` is omitted, the agent inherits the session's current model.
+If `model` is omitted, the agent inherits the session's current model. If you do not want Fusion as your default agent, omit `default_agent` and select the `fusion` agent manually when needed.
 
 ## License
 

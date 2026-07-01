@@ -1,15 +1,49 @@
 {
-  "name": "opencode-fusion",
+  "name": "@faceair/opencode-fusion",
   "version": "0.1.0",
   "description": "Multi-model fusion plugin for OpenCode: goal mode, sidekick delegation, reviewer, and dynamic mid-session routing.",
   "type": "module",
+  "license": "MIT",
+  "author": "faceair",
+  "homepage": "https://github.com/faceair/opencode-fusion#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/faceair/opencode-fusion.git"
+  },
+  "bugs": {
+    "url": "https://github.com/faceair/opencode-fusion/issues"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "ai-agent",
+    "multi-agent",
+    "multi-model"
+  ],
+  "packageManager": "bun@1.3.4",
+  "engines": {
+    "opencode": ">=1.17.11"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "README.zh.md",
+    "LICENSE"
+  ],
+  "main": "./dist/server.js",
   "exports": {
     "./server": {
       "import": "./dist/server.js"
     }
   },
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod",
+    "prepack": "bun run build",
+    "prepublishOnly": "bun run typecheck && bun test",
+    "test": "bun test",
     "typecheck": "tsc --noEmit",
     "dev": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod --watch"
   },
