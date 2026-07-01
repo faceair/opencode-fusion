@@ -3,6 +3,7 @@ import type { Plugin, PluginOptions, Hooks } from "@opencode-ai/plugin";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 
 import * as goal from "./goal.js";
+import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, recallMessages, type RecallMessage } from "./recall.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
@@ -104,7 +105,7 @@ const plugin: Plugin = async (input, options) => {
   const goalTools = {
     get_goal: {
       description:
-        "Get the current goal for this session, including status, plan, and milestone progress from the OpenCode todo list.",
+        "Get the current goal for this session, including status, plan, auto-continue state, and milestone progress from the OpenCode todo list. Use before continuing an existing objective, after compaction, or whenever goal state is uncertain.",
       args: {},
       async execute(_args: any, context: any) {
         const g = await goal.getGoal(context.sessionID);
@@ -121,10 +122,10 @@ const plugin: Plugin = async (input, options) => {
 
     set_goal: {
       description:
-        "Set a goal for the current delegated task. Do not wait for the user to request a goal — create one proactively for every delegated task. Fails if a non-complete goal already exists. After set_goal, use todowrite to create milestones.",
+        "Set a goal for the current delegated task or non-trivial self-executed execution task. Create it proactively before meaningful execution; do not wait for the user to request one. Fails if a non-complete goal already exists. After set_goal, immediately use todowrite to create concise, actionable milestones and keep them updated as work progresses.",
       args: {
-        objective: z.string().min(1).max(4000).describe("The concrete objective to start pursuing."),
-        plan: z.string().max(4000).optional().describe("Background, approach, and key decisions. Preserved across compaction."),
+        objective: z.string().min(1).max(4000).describe("One sentence stating the concrete target outcome. Do not include approach, step lists, implementation details, or verification commands."),
+        plan: z.string().max(4000).optional().describe("Short plan preserved across compaction. Prefer three compact sections: 背景 (context/constraints), 方案 (approach outline, not step-by-step), 完成标准 (what counts as done). Keep each section 1-3 lines."),
       },
       async execute(args: any, context: any) {
         const g = await goal.createGoal(context.sessionID, args.objective, args.plan);
@@ -134,11 +135,11 @@ const plugin: Plugin = async (input, options) => {
 
     update_goal: {
       description:
-        "Close the current goal. Use status 'complete' with evidence when the objective is achieved and verified. Use status 'unmet' with a blocker when the objective cannot be achieved or is blocked. Do not close a goal merely because work is stopping.",
+        "Close the current goal. Use status 'complete' only when the objective is achieved and verified; include concrete evidence such as changed files, commands/results, and reviewer outcome when relevant. Use status 'unmet' only when the objective cannot be achieved or is blocked; include the concrete blocker or missing prerequisite. Do not close a goal merely because work is stopping, and complete/cancel milestones before closing when possible.",
       args: {
         status: z.enum(["complete", "unmet"]).describe("complete = achieved; unmet = blocked or impossible."),
-        evidence: z.string().min(1).max(4000).optional().describe("Required when status is complete. Concrete evidence verified."),
-        blocker: z.string().min(1).max(4000).optional().describe("Required when status is unmet. The concrete blocker or impossibility."),
+        evidence: z.string().min(1).max(4000).optional().describe("Required when status is complete. State the verified evidence: key files/behavior changed, exact validation commands and pass results, and review evidence if applicable."),
+        blocker: z.string().min(1).max(4000).optional().describe("Required when status is unmet. State the concrete blocker, impossibility, or external prerequisite, plus the next action needed if known."),
       },
       async execute(args: any, context: any) {
         if (args.status === "complete") {
@@ -164,6 +165,29 @@ const plugin: Plugin = async (input, options) => {
       path: { id: sessionID },
       body: { parts: [{ type: "text", text: prompt }] },
     });
+  }
+
+  async function shouldSkipAutoContinue(sessionID: string): Promise<boolean> {
+    try {
+      const raw = await client.session.messages({
+        path: { id: sessionID },
+        query: { limit: 20 },
+      } as any);
+      const messages = raw?.data ?? raw ?? [];
+      return Array.isArray(messages)
+        ? shouldSkipAutoContinueForMessages(messages as AutoContinueMessage[])
+        : false;
+    } catch (error) {
+      await input.client.app?.log?.({
+        body: {
+          service: "opencode-fusion",
+          level: "warn",
+          message: "Failed to inspect latest user message before auto-continue",
+          extra: { error: error instanceof Error ? error.message : String(error) },
+        },
+      });
+      return false;
+    }
   }
 
   const hooks: Hooks = {
@@ -245,6 +269,9 @@ const plugin: Plugin = async (input, options) => {
 
       activeContinuations.add(sessionID);
       try {
+        const currentGoal = await goal.getGoal(sessionID);
+        if (currentGoal?.status !== "active") return;
+        if (await shouldSkipAutoContinue(sessionID)) return;
         const g = await goal.reserveContinuation(sessionID, MAX_AUTO_TURNS, MIN_INTERVAL);
         if (!g) return;
         await sendContinuation(sessionID, goal.continuationPrompt(g));
