@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-03
+
+### Changed
+
+- **Compaction task_id recovery moved post-compaction.** task_id injection now
+  runs on the `session.compacted` event (after summarization completes) instead
+  of the pre-compaction `experimental.session.compacting` hook. Recovery prompts
+  are sent as user messages extracted from pre-compaction history; when an active
+  goal exists, the recovery prompt doubles as the continuation prompt and
+  auto-continue skips that cycle to avoid duplicates. (`8998b75`)
+- **Goal module slimmed.** `compactionContext` moved from `goal.ts` to `taskid.ts`
+  (co-located with task_id extraction); `systemReminder` and the
+  `experimental.chat.system.transform` hook removed; `reserveContinuation`
+  throttle and `autoTurns` tracking removed. goal.ts now only contains goal CRUD
+  and `continuationPrompt`. (`8998b75`, `3f8cfc6`)
+- **KISS principle refined.** Fusion and sidekick prompts now explicitly
+  discourage over-defensive code. (`160617d`)
+
+### Fixed
+
+- **Prompt cache prefix instability.** Dynamic goal fields were injected into the
+  system prompt every turn, busting the prompt cache prefix. Goal state is now
+  surfaced via tool results and recovery prompts instead of the system prompt.
+  (`73322e4`)
+- **task_id passing clarified.** Fusion prompt now specifies `task_id` must be
+  passed via the `task` tool's parameter field, not embedded in the prompt text.
+  (`ccb70c0`)
+
 ## [0.2.0] - 2026-07-02
 
 ### Added
@@ -65,6 +93,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidekick delegation, reviewer loop, and goal-mode workflow orchestration.
 - npm package `@faceair/opencode-fusion` with `bun` build and test pipeline.
 
-[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/faceair/opencode-fusion/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/faceair/opencode-fusion/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/faceair/opencode-fusion/releases/tag/v0.1.0
