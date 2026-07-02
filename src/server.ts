@@ -4,7 +4,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
-import { normalizeRecallLimit, recallMessages, type RecallMessage } from "./recall.js";
+import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
 import { extractSidekickTaskId, extractReviewerTaskId } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
@@ -63,19 +63,23 @@ const plugin: Plugin = async (input, options) => {
   const recallTools = {
     recall_history: {
       description:
-        "Recall prior messages from the current OpenCode session. Use after compaction or when you need exact earlier context. Optional query does a simple case-insensitive keyword filter over message text/tool names. By default tool outputs are summarized; set include_tool_output=true when you need exact tool results.",
+        "Recall prior messages from the current OpenCode session. Use after compaction or when you need exact earlier context. Optional query does a simple case-insensitive keyword filter over message text/tool names. Optional role filters by message type (e.g. role=user returns only user messages). By default tool outputs are summarized; set include_tool_output=true when you need exact tool results. Use offset to page backwards from the most recent messages (e.g. after a compaction, offset=10 limit=10 returns the 10 messages just before the most recent 10), which is useful for retrieving context adjacent to a compaction boundary without a search query. role, query, offset, and limit all compose: role+query both must match, then offset pages backwards over the matched set.",
       args: {
         query: z.string().min(1).max(500).optional().describe("Optional case-insensitive keyword filter."),
+        role: z.enum(RECALL_ROLES).optional().describe("Optional message-type filter: user, assistant, system, shell, synthetic, agent-switched, model-switched, compaction."),
         limit: z.number().int().min(1).max(80).optional().describe("Maximum matching messages to return; default 20, max 80."),
+        offset: z.number().int().min(0).max(500).optional().describe("Number of most recent matched messages to skip before taking the limit window. 0 (default) returns the most recent matches; increasing offset pages backwards in time. Useful for retrieving messages adjacent to a compaction boundary."),
         include_tool_output: z.boolean().optional().describe("Include tool output content. Default false to keep recall quiet."),
       },
       async execute(args: any, context: any) {
         const limit = normalizeRecallLimit(args.limit);
+        const offset = normalizeRecallOffset(args.offset);
+        const role = normalizeRecallRole(args.role);
         let raw: any;
         try {
           raw = await client.session.messages({
             path: { id: context.sessionID },
-            query: { limit: Math.max(limit * 4, 80) },
+            query: { limit: Math.max(limit * 4 + offset * 2, 80) },
           } as any);
         } catch (error) {
           throw new Error(
@@ -89,6 +93,8 @@ const plugin: Plugin = async (input, options) => {
           recallMessages(data, {
             query: args.query,
             limit,
+            offset,
+            role,
             includeToolOutput: args.include_tool_output === true,
           }),
           null,
