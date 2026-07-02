@@ -14,15 +14,15 @@ export interface Goal {
   completionEvidence: string | null;
   blocker: string | null;
   closedAt: number | null;
-  autoTurns: number;
-  lastContinuationAt: number | null;
 }
 
 interface GoalState {
-  version: 5;
+  version: 6;
   goals: Record<string, Goal>;
   lastCleanupAt?: number;
 }
+
+const GOAL_STATE_VERSION = 6;
 
 const MAX_PLAN_CHARS = 4000;
 const CLEANUP_INTERVAL = 30 * 24 * 3600;
@@ -57,8 +57,6 @@ function makeGoal(sessionID: string, objective: string, plan?: string): Goal {
     completionEvidence: null,
     blocker: null,
     closedAt: null,
-    autoTurns: 0,
-    lastContinuationAt: null,
   };
 }
 
@@ -66,10 +64,10 @@ async function readState(): Promise<GoalState> {
   try {
     const raw = await readFile(statePath(), "utf-8");
     const parsed = JSON.parse(raw);
-    if (parsed.version !== 5) return { version: 5, goals: {} };
+    if (parsed.version !== GOAL_STATE_VERSION) return { version: GOAL_STATE_VERSION, goals: {} };
     return parsed as GoalState;
   } catch {
-    return { version: 5, goals: {} };
+    return { version: GOAL_STATE_VERSION, goals: {} };
   }
 }
 
@@ -151,28 +149,6 @@ export async function markGoalUnmet(
   goal.blocker = blocker;
   goal.closedAt = nowSeconds();
   goal.updatedAt = goal.closedAt;
-  await writeState(state);
-  return goal;
-}
-
-// 0 = unlimited auto-continue
-export async function reserveContinuation(
-  sessionID: string,
-  maxAutoTurns: number,
-  minIntervalSeconds: number,
-): Promise<Goal | null> {
-  const state = await readState();
-  const goal = state.goals[sessionID];
-  if (!goal) return null;
-  if (goal.status !== "active") return null;
-  const now = nowSeconds();
-  if (goal.lastContinuationAt && now - goal.lastContinuationAt < minIntervalSeconds) {
-    return null;
-  }
-  if (maxAutoTurns > 0 && goal.autoTurns >= maxAutoTurns) return null;
-  goal.autoTurns += 1;
-  goal.lastContinuationAt = now;
-  goal.updatedAt = now;
   await writeState(state);
   return goal;
 }

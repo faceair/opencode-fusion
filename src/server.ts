@@ -49,11 +49,6 @@ function sessionIDFromEvent(event: any): string | undefined {
   return;
 }
 
-// 0 = unlimited auto-continue
-const AUTO_CONTINUE = true;
-const MAX_AUTO_TURNS = 0;
-const MIN_INTERVAL = 3;
-
 const activeContinuations = new Set<string>();
 // Sessions that just received a compaction recovery prompt; auto-continue
 // skips these to avoid sending a redundant continuation.
@@ -110,7 +105,7 @@ const plugin: Plugin = async (input, options) => {
   const goalTools = {
     get_goal: {
       description:
-        "Get the current goal for this session, including status, plan, auto-continue state, and milestone progress from the OpenCode todo list. Use before continuing an existing objective, after compaction, or whenever goal state is uncertain.",
+        "Get the current goal for this session, including status, plan, and milestone progress from the OpenCode todo list. Use before continuing an existing objective, after compaction, or whenever goal state is uncertain.",
       args: {},
       async execute(_args: any, context: any) {
         const g = await goal.getGoal(context.sessionID);
@@ -276,7 +271,7 @@ const plugin: Plugin = async (input, options) => {
         return;
       }
       // Auto-continue on idle: skip if a compaction recovery prompt was just sent.
-      if (!AUTO_CONTINUE || !isIdleEvent(event)) return;
+      if (!isIdleEvent(event)) return;
       const sessionID = sessionIDFromEvent(event);
       if (!sessionID) return;
       if (activeContinuations.has(sessionID)) return;
@@ -290,9 +285,7 @@ const plugin: Plugin = async (input, options) => {
         const currentGoal = await goal.getGoal(sessionID);
         if (currentGoal?.status !== "active") return;
         if (await shouldSkipAutoContinue(sessionID)) return;
-        const g = await goal.reserveContinuation(sessionID, MAX_AUTO_TURNS, MIN_INTERVAL);
-        if (!g) return;
-        await sendContinuation(sessionID, goal.continuationPrompt(g));
+        await sendContinuation(sessionID, goal.continuationPrompt(currentGoal));
       } catch (error) {
         await input.client.app?.log?.({
           body: {
