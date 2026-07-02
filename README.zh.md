@@ -76,7 +76,7 @@ opencode-fusion 就是围绕这些问题设计的。
 
 每个委托任务都会创建一个 goal：一句目标，一段简短计划。goal 持久化到磁盘，能扛住两个通常会打断任务推进的情况：
 
-**上下文压缩。** 当 OpenCode 压缩会话（长任务会自动触发），goal 的目标和计划会被注入到恢复上下文里。agent 醒来时知道自己之前在做什么、为什么做、做到了哪一步——不需要手动重新解释。
+**上下文压缩。** 当 OpenCode 压缩会话（长任务会自动触发），恢复上下文里只保留 subagent `task_id`。goal 本身通过 tool result 历史和 `get_goal` 工具恢复，让 goal 对模型的可见性和 todo 列表保持一致。
 
 **进程重启。** goal 存在本地 JSON 文件里。杀进程、重启机器、明天再来——`opencode run --continue` 拿到同一个 session ID，goal 还在那里。
 

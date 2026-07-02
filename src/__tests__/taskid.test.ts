@@ -45,7 +45,9 @@ describe("extractSidekickTaskId", () => {
         }),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_abc");
+    const info = extractSidekickTaskId(messages);
+    expect(info?.task_id).toBe("tsk_abc");
+    expect(info?.description).toBeNull();
   });
 
   it("extracts task_id from follow-up input when output lacks it", () => {
@@ -58,7 +60,9 @@ describe("extractSidekickTaskId", () => {
         ),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_followup");
+    const info = extractSidekickTaskId(messages);
+    expect(info?.task_id).toBe("tsk_followup");
+    expect(info?.description).toBeNull();
   });
 
   it("skips reviewer task calls", () => {
@@ -77,7 +81,7 @@ describe("extractSidekickTaskId", () => {
       msg([toolPart("task", { subagent_type: "sidekick", prompt: "first" }, { task_id: "tsk_old" })]),
       msg([toolPart("task", { subagent_type: "sidekick", prompt: "second" }, { task_id: "tsk_new" })]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_new");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("tsk_new");
   });
 
   it("returns null when no task calls exist", () => {
@@ -95,7 +99,7 @@ describe("extractSidekickTaskId", () => {
         ),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_json");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("tsk_json");
   });
 
   it("skips non-task tool calls", () => {
@@ -115,7 +119,7 @@ describe("extractSidekickTaskId", () => {
         ),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_nested");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("tsk_nested");
   });
 
   it("returns null for empty messages", () => {
@@ -125,13 +129,15 @@ describe("extractSidekickTaskId", () => {
   it("extracts task_id from real OpenCode ToolPart shape (state.output JSON string)", () => {
     const messages = [
       msg([
-        realToolPart("task", { subagent_type: "sidekick", prompt: "do work" }, {
+        realToolPart("task", { subagent_type: "sidekick", description: "sidekick work", prompt: "do work" }, {
           task_id: "tsk_real",
           output: "done",
         }),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_real");
+    const info = extractSidekickTaskId(messages);
+    expect(info?.task_id).toBe("tsk_real");
+    expect(info?.description).toBe("sidekick work");
   });
 
   it("extracts task_id from real shape with nested data wrapper", () => {
@@ -144,7 +150,7 @@ describe("extractSidekickTaskId", () => {
         ),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_real_nested");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("tsk_real_nested");
   });
 
   it("returns latest task_id across real-shape sidekick calls", () => {
@@ -152,17 +158,19 @@ describe("extractSidekickTaskId", () => {
       msg([realToolPart("task", { subagent_type: "sidekick", prompt: "first" }, { task_id: "tsk_real_old" })]),
       msg([realToolPart("task", { subagent_type: "sidekick", prompt: "second" }, { task_id: "tsk_real_new" })]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("tsk_real_new");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("tsk_real_new");
   });
 
   it("extracts task_id from real task tool XML output (<task id=\"ses_xxx\">)", () => {
     const xmlOutput = `<task id="ses_abc123" state="completed">\n<task_result>\nDone working\n</task_result>\n</task>`;
     const messages = [
       msg([
-        realToolPart("task", { subagent_type: "sidekick", prompt: "do work" }, xmlOutput),
+        realToolPart("task", { subagent_type: "sidekick", description: "sidekick xml", prompt: "do work" }, xmlOutput),
       ]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("ses_abc123");
+    const info = extractSidekickTaskId(messages);
+    expect(info?.task_id).toBe("ses_abc123");
+    expect(info?.description).toBe("sidekick xml");
   });
 
   it("extracts latest task_id from multiple real XML outputs", () => {
@@ -172,7 +180,7 @@ describe("extractSidekickTaskId", () => {
       msg([realToolPart("task", { subagent_type: "sidekick", prompt: "first" }, xml1)]),
       msg([realToolPart("task", { subagent_type: "sidekick", prompt: "second" }, xml2)]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("ses_second");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("ses_second");
   });
 
   it("extracts task_id from XML output even when follow-up input also has task_id", () => {
@@ -187,7 +195,7 @@ describe("extractSidekickTaskId", () => {
       ]),
     ];
     // Output takes precedence (latest completed result)
-    expect(extractSidekickTaskId(messages)).toBe("ses_from_xml");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("ses_from_xml");
   });
 });
 
@@ -200,7 +208,9 @@ describe("extractReviewerTaskId", () => {
         }),
       ]),
     ];
-    expect(extractReviewerTaskId(messages)).toBe("tsk_review");
+    const info = extractReviewerTaskId(messages);
+    expect(info?.task_id).toBe("tsk_review");
+    expect(info?.description).toBeNull();
   });
 
   it("skips sidekick task calls", () => {
@@ -218,10 +228,12 @@ describe("extractReviewerTaskId", () => {
     const xmlOutput = `<task id="ses_rev123" state="completed">\n<task_result>\nreview done\n</task_result>\n</task>`;
     const messages = [
       msg([
-        realToolPart("task", { subagent_type: "reviewer", prompt: "review this" }, xmlOutput),
+        realToolPart("task", { subagent_type: "reviewer", description: "reviewer review", prompt: "review this" }, xmlOutput),
       ]),
     ];
-    expect(extractReviewerTaskId(messages)).toBe("ses_rev123");
+    const info = extractReviewerTaskId(messages);
+    expect(info?.task_id).toBe("ses_rev123");
+    expect(info?.description).toBe("reviewer review");
   });
 
   it("returns latest reviewer task_id when multiple exist", () => {
@@ -231,7 +243,7 @@ describe("extractReviewerTaskId", () => {
       msg([realToolPart("task", { subagent_type: "reviewer", prompt: "first" }, xml1)]),
       msg([realToolPart("task", { subagent_type: "reviewer", prompt: "second" }, xml2)]),
     ];
-    expect(extractReviewerTaskId(messages)).toBe("ses_rev_new");
+    expect(extractReviewerTaskId(messages)?.task_id).toBe("ses_rev_new");
   });
 
   it("extracts reviewer task_id from follow-up input when output lacks it", () => {
@@ -244,7 +256,9 @@ describe("extractReviewerTaskId", () => {
         ),
       ]),
     ];
-    expect(extractReviewerTaskId(messages)).toBe("tsk_rev_followup");
+    const info = extractReviewerTaskId(messages);
+    expect(info?.task_id).toBe("tsk_rev_followup");
+    expect(info?.description).toBeNull();
   });
 
   it("returns null when no reviewer task calls exist", () => {
@@ -259,7 +273,7 @@ describe("extractReviewerTaskId", () => {
       msg([realToolPart("task", { subagent_type: "sidekick", prompt: "work" }, sideXml)]),
       msg([realToolPart("task", { subagent_type: "reviewer", prompt: "review" }, revXml)]),
     ];
-    expect(extractSidekickTaskId(messages)).toBe("ses_side_mixed");
-    expect(extractReviewerTaskId(messages)).toBe("ses_rev_mixed");
+    expect(extractSidekickTaskId(messages)?.task_id).toBe("ses_side_mixed");
+    expect(extractReviewerTaskId(messages)?.task_id).toBe("ses_rev_mixed");
   });
 });

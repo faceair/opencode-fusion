@@ -418,7 +418,7 @@ describe("opencode-fusion e2e", () => {
     });
   }, 60_000);
 
-  it("goal persists across compaction context injection", async () => {
+  it("goal persists across compaction", async () => {
     // Integration test: verify goal state persistence and get_goal retrieval.
     // This does NOT trigger the compaction hook — see the compaction e2e test
     // below for actual hook coverage.
@@ -453,11 +453,10 @@ describe("opencode-fusion e2e", () => {
     });
   }, 90_000);
 
-  it("compaction hook injects goal context into the compaction LLM request", async () => {
+  it("compaction does not inject goal context into the compaction LLM request", async () => {
     // True e2e: forces natural compaction by using a tiny model context limit
     // and high reported usage, then inspects the LLM request body to verify
-    // the fusion plugin's experimental.session.compacting hook injected the
-    // goal context into the compaction prompt.
+    // the fusion plugin does not inject goal context into the compaction prompt.
     await withFusionEnv(
       async (env) => {
         // Turn 1: set a goal with a distinctive objective string.
@@ -468,13 +467,8 @@ describe("opencode-fusion e2e", () => {
         env.llm.reset();
 
         // Turn 2: send a prompt that reports high usage to trigger overflow.
-        // With context=500, output=100: usable = 500 - 100 = 400.
-        // Report input=450 to exceed the threshold.
-        // Queue a text response for the overflow turn, and a compaction summary
-        // response for the compaction LLM call that follows.
         env.llm.setNextUsage({ input: 450, output: 1 });
         env.llm.text("working on the task");
-        // The compaction LLM call will get an auto-responded "ok".
 
         await env.client.session.promptAsync({
           path: { id: sessionID },
@@ -485,16 +479,16 @@ describe("opencode-fusion e2e", () => {
           },
         } as any);
 
-        // Wait for the compaction LLM request to arrive. The compaction hook
-        // injects "Active goal — preserved during compaction" into the context,
-        // which is distinct from the system prompt goal reminder. We look for
-        // this specific compaction context marker.
+        // Wait for the compaction LLM request to arrive. It should not contain
+        // the former goal compaction marker or system reminder.
         const start = Date.now();
         let compactionHit: { url: string; body: Record<string, unknown> } | null = null;
         while (Date.now() - start < 30_000) {
           const hits = env.llm.hits;
           compactionHit = hits.find(
-            (h) => !isTitleBody(h.body) && JSON.stringify(h.body).includes("Active goal — preserved during compaction"),
+            (h) =>
+              !isTitleBody(h.body) &&
+              JSON.stringify(h.body).toLowerCase().includes("compact"),
           ) ?? null;
           if (compactionHit) break;
           await Bun.sleep(300);
@@ -502,30 +496,23 @@ describe("opencode-fusion e2e", () => {
 
         expect(compactionHit).not.toBeNull();
         const bodyStr = JSON.stringify(compactionHit!.body);
-        // The compaction context should include the objective.
-        expect(bodyStr).toContain("DISTINCTIVE_COMPACTION_GOAL_TEXT");
-        // The compaction context header should be present (injected by the hook).
-        expect(bodyStr).toContain("Active goal — preserved during compaction");
+        expect(bodyStr).not.toContain("Active goal — preserved during compaction");
+        expect(bodyStr).not.toContain("[opencode-fusion goal mode]");
       },
       { modelLimit: { context: 500, output: 100 }, enableAutoCompact: true },
     );
   }, 90_000);
 
-  it("compaction hook injects sidekick task_id from real task tool XML output", async () => {
+  it("session.compacted event injects sidekick task_id as a post-compaction user message", async () => {
     // True e2e: forces compaction after a sidekick task tool call, then
-    // verifies the compaction LLM request contains the sidekick task_id
-    // extracted from the real <task id="ses_xxx"> XML output.
+    // verifies the task_id is recovered and sent as a user message after compaction.
     await withFusionEnv(
       async (env) => {
-        // Turn 1: set a goal.
+        // Turn 1: set a goal (needed so auto-continue is active to consume the task_ids).
         env.llm.tool("set_goal", { objective: "Task ID compaction test" });
         const { sessionID } = await createAndPromptForTool(env, "set a goal", "set_goal");
 
         // Turn 2: call the task tool with subagent_type=sidekick.
-        // The task tool output will be in <task id="ses_xxx" state="completed"> format.
-        // We need the fake LLM to emit a task tool call, and opencode will execute
-        // it, creating a child session. The task tool's output will contain the
-        // child session ID in the <task id="..."> tag.
         env.llm.tool("task", {
           description: "sidekick work",
           prompt: "do something",
@@ -537,12 +524,11 @@ describe("opencode-fusion e2e", () => {
         const taskState = taskPart.state as Record<string, unknown>;
         expect(taskState.status).toBe("completed");
         const taskOutput = taskState.output as string;
-        // The output should contain <task id="ses_xxx" ...>
         expect(taskOutput).toMatch(/<task\s+id="ses_[^"]+"/);
         const taskIdMatch = taskOutput.match(/<task\s+id="(ses_[^"]+)"/);
         const taskId = taskIdMatch![1]!;
 
-        // Reset LLM hits to cleanly capture the compaction request.
+        // Reset LLM hits to cleanly capture post-compaction requests.
         env.llm.reset();
 
         // Turn 3: trigger compaction with high usage.
@@ -558,32 +544,35 @@ describe("opencode-fusion e2e", () => {
           },
         } as any);
 
-        // Wait for the compaction request containing the task_id.
+        // Wait for a post-compaction LLM request that contains the sidekick task_id.
+        // The fusion plugin's session.compacted handler sends a continuation prompt
+        // that includes the recovered task_id, which triggers a new LLM turn.
         const start = Date.now();
-        let compactionHit: { url: string; body: Record<string, unknown> } | null = null;
+        let recoveryHit: { url: string; body: Record<string, unknown> } | null = null;
         while (Date.now() - start < 30_000) {
           const hits = env.llm.hits;
-          compactionHit = hits.find(
+          recoveryHit = hits.find(
             (h) =>
-              !isTitleBody(h.body) && JSON.stringify(h.body).includes("Sidekick task_id"),
+              !isTitleBody(h.body) &&
+              JSON.stringify(h.body).includes("Sidekick task_id"),
           ) ?? null;
-          if (compactionHit) break;
+          if (recoveryHit) break;
           await Bun.sleep(300);
         }
 
-        expect(compactionHit).not.toBeNull();
-        const bodyStr = JSON.stringify(compactionHit!.body);
+        expect(recoveryHit).not.toBeNull();
+        const bodyStr = JSON.stringify(recoveryHit!.body);
         expect(bodyStr).toContain("Sidekick task_id");
         expect(bodyStr).toContain(taskId);
+        expect(bodyStr).toContain("sidekick work");
       },
       { modelLimit: { context: 500, output: 100 }, enableAutoCompact: true },
     );
   }, 120_000);
 
-  it("compaction hook injects reviewer task_id from real task tool XML output", async () => {
+  it("session.compacted event injects reviewer task_id as a post-compaction user message", async () => {
     // True e2e: forces compaction after a reviewer task tool call, then
-    // verifies the compaction LLM request contains the reviewer task_id
-    // extracted from the real <task id="ses_xxx"> XML output.
+    // verifies the reviewer task_id is recovered and sent as a user message after compaction.
     await withFusionEnv(
       async (env) => {
         // Turn 1: set a goal.
@@ -605,7 +594,7 @@ describe("opencode-fusion e2e", () => {
         const taskIdMatch = taskOutput.match(/<task\s+id="(ses_[^"]+)"/);
         const taskId = taskIdMatch![1]!;
 
-        // Reset LLM hits to cleanly capture the compaction request.
+        // Reset LLM hits to cleanly capture post-compaction requests.
         env.llm.reset();
 
         // Turn 3: trigger compaction with high usage.
@@ -621,23 +610,25 @@ describe("opencode-fusion e2e", () => {
           },
         } as any);
 
-        // Wait for the compaction request containing the reviewer task_id.
+        // Wait for a post-compaction LLM request that contains the reviewer task_id.
         const start = Date.now();
-        let compactionHit: { url: string; body: Record<string, unknown> } | null = null;
+        let recoveryHit: { url: string; body: Record<string, unknown> } | null = null;
         while (Date.now() - start < 30_000) {
           const hits = env.llm.hits;
-          compactionHit = hits.find(
+          recoveryHit = hits.find(
             (h) =>
-              !isTitleBody(h.body) && JSON.stringify(h.body).includes("Reviewer task_id"),
+              !isTitleBody(h.body) &&
+              JSON.stringify(h.body).includes("Reviewer task_id"),
           ) ?? null;
-          if (compactionHit) break;
+          if (recoveryHit) break;
           await Bun.sleep(300);
         }
 
-        expect(compactionHit).not.toBeNull();
-        const bodyStr = JSON.stringify(compactionHit!.body);
+        expect(recoveryHit).not.toBeNull();
+        const bodyStr = JSON.stringify(recoveryHit!.body);
         expect(bodyStr).toContain("Reviewer task_id");
         expect(bodyStr).toContain(taskId);
+        expect(bodyStr).toContain("reviewer review");
       },
       { modelLimit: { context: 500, output: 100 }, enableAutoCompact: true },
     );

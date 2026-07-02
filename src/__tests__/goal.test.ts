@@ -1,56 +1,39 @@
 import { describe, expect, test } from "bun:test";
-import { compactionContext, type Goal } from "../goal.js";
-
-function makeGoal(overrides: Partial<Goal> = {}): Goal {
-  return {
-    sessionID: "ses_test",
-    objective: "Test objective",
-    plan: null,
-    status: "active",
-    createdAt: 1000,
-    updatedAt: 1000,
-    completionEvidence: null,
-    blocker: null,
-    closedAt: null,
-    autoTurns: 0,
-    lastContinuationAt: null,
-    ...overrides,
-  };
-}
+import { compactionContext } from "../taskid.js";
 
 describe("compactionContext", () => {
-  test("base context without task IDs", () => {
-    const ctx = compactionContext(makeGoal());
-    expect(ctx).toContain("Active goal — preserved during compaction");
-    expect(ctx).toContain("Test objective");
-    expect(ctx).not.toContain("task_id");
-  });
-
-  test("includes plan when present", () => {
-    const ctx = compactionContext(makeGoal({ plan: "背景: x\n方案: y\n完成标准: z" }));
-    expect(ctx).toContain("Plan: 背景: x");
+  test("returns empty string without task IDs", () => {
+    expect(compactionContext()).toBe("");
+    expect(compactionContext(null, null)).toBe("");
   });
 
   test("sidekick task_id only", () => {
-    const ctx = compactionContext(makeGoal(), "ses_side123");
-    expect(ctx).toContain("Sidekick task_id: ses_side123");
+    const ctx = compactionContext({ task_id: "ses_side123", description: "sidekick work" });
+    expect(ctx).toContain("Subagent task_ids — recovered after compaction");
+    expect(ctx).toContain('Sidekick task_id: ses_side123 (last dispatch: "sidekick work")');
     expect(ctx).not.toContain("Reviewer task_id");
   });
 
   test("reviewer task_id only", () => {
-    const ctx = compactionContext(makeGoal(), null, "ses_rev123");
-    expect(ctx).toContain("Reviewer task_id: ses_rev123");
+    const ctx = compactionContext(null, { task_id: "ses_rev123", description: "reviewer review" });
+    expect(ctx).toContain("Subagent task_ids — recovered after compaction");
+    expect(ctx).toContain('Reviewer task_id: ses_rev123 (last dispatch: "reviewer review")');
     expect(ctx).not.toContain("Sidekick task_id");
   });
 
   test("both sidekick and reviewer task_ids", () => {
-    const ctx = compactionContext(makeGoal(), "ses_side456", "ses_rev456");
-    expect(ctx).toContain("Sidekick task_id: ses_side456");
-    expect(ctx).toContain("Reviewer task_id: ses_rev456");
+    const ctx = compactionContext(
+      { task_id: "ses_side456", description: "sidekick work" },
+      { task_id: "ses_rev456", description: "reviewer review" },
+    );
+    expect(ctx).toContain("Subagent task_ids — recovered after compaction");
+    expect(ctx).toContain('Sidekick task_id: ses_side456 (last dispatch: "sidekick work")');
+    expect(ctx).toContain('Reviewer task_id: ses_rev456 (last dispatch: "reviewer review")');
   });
 
-  test("null task IDs produce base context", () => {
-    const ctx = compactionContext(makeGoal(), null, null);
-    expect(ctx).not.toContain("task_id");
+  test("omits last dispatch when description is null", () => {
+    const ctx = compactionContext({ task_id: "ses_side789", description: null });
+    expect(ctx).toContain("Sidekick task_id: ses_side789");
+    expect(ctx).not.toContain("last dispatch");
   });
 });

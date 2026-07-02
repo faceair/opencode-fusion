@@ -76,7 +76,7 @@ Each finding traces the full path: entry point → processing → storage → ou
 
 Every delegated task gets a goal: one sentence for the objective, a short plan for background and approach. The goal persists to disk and survives two things that normally kill task momentum:
 
-**Context compaction.** When OpenCode compacts the session (which happens automatically on long tasks), the goal's objective and plan are injected into the recovery context. The agent wakes up knowing what it was doing, why, and how far it's gotten — no manual re-explanation needed.
+**Context compaction.** When OpenCode compacts the session (which happens automatically on long tasks), only subagent `task_id`s are preserved in the recovery context. The goal itself is recovered through tool-result history and the `get_goal` tool, keeping goal visibility consistent with the todo list.
 
 **Process restart.** Goals are stored in a local JSON file. Kill the process, reboot your machine, come back tomorrow — `opencode run --continue` picks up the same session ID, and the goal is still there.
 

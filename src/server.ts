@@ -5,7 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
-import { extractSidekickTaskId, extractReviewerTaskId } from "./taskid.js";
+import { extractSidekickTaskId, extractReviewerTaskId, compactionContext } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -55,6 +55,9 @@ const MAX_AUTO_TURNS = 0;
 const MIN_INTERVAL = 3;
 
 const activeContinuations = new Set<string>();
+// Sessions that just received a compaction recovery prompt; auto-continue
+// skips these to avoid sending a redundant continuation.
+const compactionRecoverySessions = new Set<string>();
 
 const plugin: Plugin = async (input, options) => {
   const { sidekick, reviewer } = parseOptions(options);
@@ -226,37 +229,6 @@ const plugin: Plugin = async (input, options) => {
       ...recallTools,
     } as any,
 
-    async "experimental.chat.system.transform"(input, output) {
-      if (typeof input.sessionID !== "string") return;
-      const g = await goal.getGoal(input.sessionID);
-      if (!g) return;
-      const reminder = goal.systemReminder(g);
-      if (!reminder.trim()) return;
-      if (output.system.some((block) => block.includes("opencode-fusion goal mode"))) return;
-      if (output.system.length === 0) {
-        output.system.push(reminder);
-        return;
-      }
-      output.system[0] = `${output.system[0]}\n\n${reminder}`;
-    },
-
-    async "experimental.session.compacting"(input, output) {
-      const g = await goal.getGoal(input.sessionID);
-      if (!g) return;
-      let sidekickTaskId: string | null = null;
-      let reviewerTaskId: string | null = null;
-      try {
-        const raw = await client.session.messages({
-          path: { id: input.sessionID },
-          query: { limit: 80 },
-        } as any);
-        const data = (raw?.data ?? raw) as RecallMessage[];
-        sidekickTaskId = extractSidekickTaskId(data);
-        reviewerTaskId = extractReviewerTaskId(data);
-      } catch {}
-      output.context.push(goal.compactionContext(g, sidekickTaskId, reviewerTaskId));
-    },
-
     async "experimental.compaction.autocontinue"(input, output) {
       const g = await goal.getGoal(input.sessionID);
       if (g?.status === "active") {
@@ -265,10 +237,53 @@ const plugin: Plugin = async (input, options) => {
     },
 
     async event({ event }) {
-      const sessionID = sessionIDFromEvent(event);
+      // On compaction completion: extract task_ids from pre-compaction history
+      // and send a recovery prompt. If an active goal exists, the recovery prompt
+      // doubles as the continuation prompt (auto-continue is skipped for this cycle).
+      if (event.type === "session.compacted") {
+        const sessionID = (event as any).properties?.sessionID;
+        if (typeof sessionID !== "string") return;
+        try {
+          const raw = await client.session.messages({
+            path: { id: sessionID },
+            query: { limit: 80 },
+          } as any);
+          const data = (raw?.data ?? raw) as RecallMessage[];
+          const sidekick = extractSidekickTaskId(data);
+          const reviewer = extractReviewerTaskId(data);
+          if (!sidekick && !reviewer) return;
+          const taskCtx = compactionContext(sidekick, reviewer);
+          const g = await goal.getGoal(sessionID);
+          if (g?.status === "active") {
+            // Mark this session as having received a compaction recovery prompt
+            // so the idle auto-continue handler skips the redundant continuation.
+            compactionRecoverySessions.add(sessionID);
+            const prompt = `${goal.continuationPrompt(g)}\n\n${taskCtx}`;
+            await sendContinuation(sessionID, prompt);
+          } else {
+            await sendContinuation(sessionID, taskCtx);
+          }
+        } catch (error) {
+          await input.client.app?.log?.({
+            body: {
+              service: "opencode-fusion",
+              level: "error",
+              message: "Compaction task_id recovery failed",
+              extra: { error: error instanceof Error ? error.message : String(error) },
+            },
+          });
+        }
+        return;
+      }
+      // Auto-continue on idle: skip if a compaction recovery prompt was just sent.
       if (!AUTO_CONTINUE || !isIdleEvent(event)) return;
+      const sessionID = sessionIDFromEvent(event);
       if (!sessionID) return;
       if (activeContinuations.has(sessionID)) return;
+      if (compactionRecoverySessions.has(sessionID)) {
+        compactionRecoverySessions.delete(sessionID);
+        return;
+      }
 
       activeContinuations.add(sessionID);
       try {
