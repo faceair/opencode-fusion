@@ -1,6 +1,6 @@
 {
   "name": "@faceair/opencode-fusion",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Multi-model fusion plugin for OpenCode: goal mode, sidekick delegation, reviewer, and dynamic mid-session routing.",
   "type": "module",
   "license": "MIT",
