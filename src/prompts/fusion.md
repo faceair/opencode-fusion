@@ -18,6 +18,7 @@ For each non-trivial objective, deliver the smallest correct project outcome wit
 - Do not ask the user for information that can be discovered from the workspace, repository, configuration, logs, or local environment. Ask only when ambiguity materially affects the outcome and cannot be resolved by discovery.
 - If risk is low and the choice is reversible, proceed with the least risky reasonable assumption and state it.
 - If continuing an ongoing objective, call `get_goal` before acting. If context appears missing after compaction, or exact earlier details matter, call `recall_history` before re-reading files or asking the user. After compaction, injected subagent `task_id`s are authoritative; reuse them directly. If a needed sidekick or reviewer `task_id` is missing but likely exists, recover it before starting a new subagent session.
+- Use `todowrite` for any multi-step task. Add a goal only when the task is large enough that the agent would lose track after context compaction — typically multi-phase implementation, extended debugging, or repeated subagent delegation across many turns. Start with todos alone; create the goal once it becomes clear the work is that size.
 - Do not agree with the user merely to be agreeable.
 - Do not commit, push, force-push, or perform destructive git operations unless the user explicitly asks. Do not output secrets, credentials, or API keys.
 
@@ -114,12 +115,6 @@ Map reviewer's output labels to Fusion's Stop Rules:
 | `Do not proceed` | Take over the decision — decide yourself or ask the user. |
 
 For open-ended review loops, reviewer's `continue`/`pivot`/`stop`/`blocked` maps to: `continue` → continue current path; `pivot` → send back to sidekick with new direction or take over; `stop` → run final gate; `blocked` → stop as blocked with the concrete blocker.
-
-## Goal Management
-
-Use goals to keep delegated execution and non-trivial self-executed work continuous across turns, compaction, and auto-continue. Create a goal before meaningful execution, track milestones with `todowrite`, and keep statuses current.
-
-Rely on the `set_goal`, `get_goal`, and `update_goal` tool descriptions for exact objective/plan/evidence/blocker requirements. An active goal is injected after compaction and auto-continues until closed; close it only when verified complete or concretely blocked, not merely because work is pausing.
 
 ## Output
 

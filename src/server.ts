@@ -124,7 +124,7 @@ const plugin: Plugin = async (input, options) => {
 
     set_goal: {
       description:
-        "Set a goal for the current delegated task or non-trivial self-executed execution task. Create it proactively before meaningful execution; do not wait for the user to request one. Fails if a non-complete goal already exists. After set_goal, immediately use todowrite to create concise, actionable milestones and keep them updated as work progresses.",
+        "Set a goal for the current session. Fails if a non-complete goal already exists. After set_goal, immediately use todowrite to create concise, actionable milestones and keep them updated as work progresses.",
       args: {
         objective: z.string().min(1).max(4000).describe("One sentence stating the concrete target outcome. Do not include approach, step lists, implementation details, or verification commands."),
         plan: z.string().max(4000).optional().describe("Short plan preserved across compaction. Prefer three compact sections: 背景 (context/constraints), 方案 (approach outline, not step-by-step), 完成标准 (what counts as done). Keep each section 1-3 lines."),
@@ -230,15 +230,7 @@ const plugin: Plugin = async (input, options) => {
       if (typeof input.sessionID !== "string") return;
       const g = await goal.getGoal(input.sessionID);
       if (!g) return;
-      let todos: { content: string; status: string }[] = [];
-      try {
-        const result = await client.session.todo({
-          path: { id: input.sessionID },
-        }) as any;
-        const raw = (result.data ?? result) as any[];
-        todos = raw.map((t: any) => ({ content: t.content, status: t.status }));
-      } catch {}
-      const reminder = goal.systemReminder(g, todos);
+      const reminder = goal.systemReminder(g);
       if (!reminder.trim()) return;
       if (output.system.some((block) => block.includes("opencode-fusion goal mode"))) return;
       if (output.system.length === 0) {

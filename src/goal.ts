@@ -179,27 +179,14 @@ export async function reserveContinuation(
 
 const GOAL_MARKER = "opencode-fusion goal mode";
 
-export function systemReminder(goal: Goal | null, todos: { content: string; status: string }[]): string {
+export function systemReminder(goal: Goal | null): string {
   if (!goal) return "";
-  const elapsed = nowSeconds() - goal.createdAt;
-  const activeMilestones = todos
-    .filter((t) => t.status === "in_progress")
-    .map((t) => `  ▶ ${t.content}`);
-  const pendingMilestones = todos
-    .filter((t) => t.status === "pending")
-    .map((t) => `  ○ ${t.content}`);
-  const completedCount = todos.filter((t) => t.status === "completed").length;
-  const todoSection = todos.length > 0
-    ? `\nMilestones (${completedCount}/${todos.length} done):\n${activeMilestones.concat(pendingMilestones).join("\n") || "  (all done)"}`
-    : "";
-
   const planSection = goal.plan
     ? `\nPlan: ${goal.plan.slice(0, 300)}`
     : "";
 
   return `[${GOAL_MARKER}]
-Current goal (status: ${goal.status}, elapsed: ${elapsed}s, auto-turns: ${goal.autoTurns})
-Objective: ${goal.objective}${planSection}${todoSection}
+Objective: ${goal.objective}${planSection}
 
 Continue working toward this objective. Use update_goal to close it with evidence when complete, or with a blocker when unmet.`;
 }
