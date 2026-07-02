@@ -204,18 +204,28 @@ Objective: ${goal.objective}${planSection}${todoSection}
 Continue working toward this objective. Use update_goal to close it with evidence when complete, or with a blocker when unmet.`;
 }
 
-export function compactionContext(goal: Goal, sidekickTaskId?: string | null): string {
+export function compactionContext(
+  goal: Goal,
+  sidekickTaskId?: string | null,
+  reviewerTaskId?: string | null,
+): string {
   const base = `[Active goal — preserved during compaction]
 Objective: ${goal.objective}
 ${goal.plan ? `Plan: ${goal.plan}\n` : ""}Status: ${goal.status}
 Auto-turns: ${goal.autoTurns}`;
+  const taskIds: string[] = [];
   if (sidekickTaskId) {
-    return `${base}
-
-Sidekick task_id: ${sidekickTaskId}
-Reuse this task_id on the next sidekick dispatch to continue the same session.`;
+    taskIds.push(`Sidekick task_id: ${sidekickTaskId}
+Reuse this task_id on the next sidekick dispatch to continue the same session.`);
   }
-  return base;
+  if (reviewerTaskId) {
+    taskIds.push(`Reviewer task_id: ${reviewerTaskId}
+Reuse this task_id on the next reviewer dispatch to continue the same session.`);
+  }
+  if (taskIds.length === 0) return base;
+  return `${base}
+
+${taskIds.join("\n\n")}`;
 }
 
 export function continuationPrompt(goal: Goal): string {

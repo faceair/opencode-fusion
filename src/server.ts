@@ -5,7 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, recallMessages, type RecallMessage } from "./recall.js";
-import { extractSidekickTaskId } from "./taskid.js";
+import { extractSidekickTaskId, extractReviewerTaskId } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -84,14 +84,9 @@ const plugin: Plugin = async (input, options) => {
             }`,
           );
         }
-        const data = raw?.data ?? raw ?? [];
-        if (!Array.isArray(data)) {
-          throw new Error(
-            `Failed to recall OpenCode session history for session ${context.sessionID}: expected message array, got ${typeof data}`,
-          );
-        }
+        const data = (raw?.data ?? raw) as RecallMessage[];
         return JSON.stringify(
-          recallMessages(data as RecallMessage[], {
+          recallMessages(data, {
             query: args.query,
             limit,
             includeToolOutput: args.include_tool_output === true,
@@ -115,7 +110,7 @@ const plugin: Plugin = async (input, options) => {
           const result = await client.session.todo({
             path: { id: context.sessionID },
           }) as any;
-          todos = result.data ?? result ?? [];
+          todos = (result.data ?? result) as any[];
         } catch {}
         return JSON.stringify({ goal: g, milestones: todos }, null, 2);
       },
@@ -174,10 +169,8 @@ const plugin: Plugin = async (input, options) => {
         path: { id: sessionID },
         query: { limit: 20 },
       } as any);
-      const messages = raw?.data ?? raw ?? [];
-      return Array.isArray(messages)
-        ? shouldSkipAutoContinueForMessages(messages as AutoContinueMessage[])
-        : false;
+      const messages = (raw?.data ?? raw) as AutoContinueMessage[];
+      return shouldSkipAutoContinueForMessages(messages);
     } catch (error) {
       await input.client.app?.log?.({
         body: {
@@ -236,8 +229,8 @@ const plugin: Plugin = async (input, options) => {
         const result = await client.session.todo({
           path: { id: input.sessionID },
         }) as any;
-        const raw = result.data ?? result ?? [];
-        todos = Array.isArray(raw) ? raw.map((t: any) => ({ content: t.content, status: t.status })) : [];
+        const raw = (result.data ?? result) as any[];
+        todos = raw.map((t: any) => ({ content: t.content, status: t.status }));
       } catch {}
       const reminder = goal.systemReminder(g, todos);
       if (!reminder.trim()) return;
@@ -253,17 +246,17 @@ const plugin: Plugin = async (input, options) => {
       const g = await goal.getGoal(input.sessionID);
       if (!g) return;
       let sidekickTaskId: string | null = null;
+      let reviewerTaskId: string | null = null;
       try {
         const raw = await client.session.messages({
           path: { id: input.sessionID },
           query: { limit: 80 },
         } as any);
-        const data = raw?.data ?? raw ?? [];
-        if (Array.isArray(data)) {
-          sidekickTaskId = extractSidekickTaskId(data as RecallMessage[]);
-        }
+        const data = (raw?.data ?? raw) as RecallMessage[];
+        sidekickTaskId = extractSidekickTaskId(data);
+        reviewerTaskId = extractReviewerTaskId(data);
       } catch {}
-      output.context.push(goal.compactionContext(g, sidekickTaskId));
+      output.context.push(goal.compactionContext(g, sidekickTaskId, reviewerTaskId));
     },
 
     async "experimental.compaction.autocontinue"(input, output) {

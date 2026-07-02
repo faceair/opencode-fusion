@@ -63,7 +63,6 @@ function partText(part: unknown, includeToolOutput: boolean): string {
   const type = typeof p.type === "string" ? p.type : "part";
 
   if (typeof p.text === "string") return p.text;
-  if (typeof p.content === "string") return p.content;
 
   if (type === "tool" || p.tool || p.name) {
     const name = textOf(p.tool ?? p.name ?? "tool");
@@ -73,7 +72,7 @@ function partText(part: unknown, includeToolOutput: boolean): string {
     const chunks = [`[tool ${name} ${status}]`];
     if (input !== undefined) chunks.push(`input: ${truncate(textOf(input), 1200)}`);
     if (includeToolOutput) {
-      const output = state?.content ?? state?.result ?? p.output ?? p.result ?? p.content;
+      const output = state?.output;
       if (output !== undefined) chunks.push(`output: ${truncate(textOf(output), 3000)}`);
     }
     return chunks.join("\n");
@@ -114,11 +113,6 @@ function messageText(message: RecallMessage, includeToolOutput: boolean): string
   }
   if (Array.isArray(message.parts)) {
     return message.parts.map((part) => partText(part, includeToolOutput)).filter(Boolean).join("\n\n");
-  }
-  const record = asRecord(message);
-  const content = record?.content;
-  if (Array.isArray(content)) {
-    return content.map((part) => partText(part, includeToolOutput)).filter(Boolean).join("\n\n");
   }
   return textOf(message);
 }

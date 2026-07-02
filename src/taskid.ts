@@ -8,6 +8,9 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function extractTaskId(value: unknown): string | null {
   if (typeof value === "string") {
+    // Real task tool output: <task id="ses_xxx" state="completed">...</task>
+    const tagMatch = value.match(/<task\s+id="([^"]+)"/);
+    if (tagMatch) return tagMatch[1]!;
     try {
       return extractTaskId(JSON.parse(value));
     } catch {
@@ -27,41 +30,52 @@ function extractTaskId(value: unknown): string | null {
   return null;
 }
 
-function isSidekickTaskPart(part: unknown): boolean {
+function isTaskPartForSubagent(part: unknown, subagentType: string): boolean {
   const p = asRecord(part);
   if (!p) return false;
   const name = p.tool ?? p.name;
   if (name !== "task") return false;
   const state = asRecord(p.state);
   const input = state?.input ?? p.input;
-  return asRecord(input)?.subagent_type === "sidekick";
+  return asRecord(input)?.subagent_type === subagentType;
 }
 
 function partTaskId(part: unknown): string | null {
   const p = asRecord(part);
   if (!p) return null;
   const state = asRecord(p.state);
-  const output = state?.content ?? state?.result ?? p.output ?? p.result ?? p.content;
+  const output = state?.output;
   const input = state?.input ?? p.input;
   return extractTaskId(output) ?? extractTaskId(input);
 }
 
 function messageParts(message: RecallMessage): unknown[] {
-  if (Array.isArray(message.parts)) return message.parts;
-  const rec = asRecord(message);
-  if (rec && Array.isArray(rec.content)) return rec.content as unknown[];
-  return [];
+  return Array.isArray(message.parts) ? message.parts : [];
 }
 
-export function extractSidekickTaskId(messages: RecallMessage[]): string | null {
+/** Extract the latest task_id from task tool calls for the given subagent type. */
+function extractTaskIdForSubagent(
+  messages: RecallMessage[],
+  subagentType: string,
+): string | null {
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messageParts(messages[i]);
     for (let j = parts.length - 1; j >= 0; j--) {
       const part = parts[j];
-      if (!isSidekickTaskPart(part)) continue;
+      if (!isTaskPartForSubagent(part, subagentType)) continue;
       const taskId = partTaskId(part);
       if (taskId) return taskId;
     }
   }
   return null;
+}
+
+/** Extract the latest sidekick task_id. Preserved for backward compatibility. */
+export function extractSidekickTaskId(messages: RecallMessage[]): string | null {
+  return extractTaskIdForSubagent(messages, "sidekick");
+}
+
+/** Extract the latest reviewer task_id. */
+export function extractReviewerTaskId(messages: RecallMessage[]): string | null {
+  return extractTaskIdForSubagent(messages, "reviewer");
 }

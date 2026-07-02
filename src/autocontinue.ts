@@ -42,10 +42,11 @@ function latestMessage(messages: AutoContinueMessage[]): AutoContinueMessage | u
 }
 
 // In the auto-continue path the session is idle, so an assistant message
-// without a finish marker did not complete normally — it was interrupted
-// (e.g. user pressed Esc). Abort can fire the idle event before the
-// message's error field is persisted, so checking finish absence is the
-// reliable signal across all abort timing windows.
+// without a normal finish marker (stop, tool-calls) did not complete
+// normally — it was interrupted (e.g. user pressed Esc) or errored. Abort
+// can fire the idle event before the message's error field is persisted,
+// so checking for absent or error finish is the reliable signal across all
+// abort timing windows.
 export function isInterruptedAssistantMessage(message: AutoContinueMessage): boolean {
   const role = messageRole(message).toLowerCase();
   if (role !== "assistant") return false;
@@ -56,7 +57,9 @@ export function isInterruptedAssistantMessage(message: AutoContinueMessage): boo
     : typeof info?.finish === "string"
       ? info.finish
       : null;
-  return !finish;
+  // Normal completions: "stop", "tool-calls". Anything else (null, "error",
+  // "length", "content_filter") means the turn did not end cleanly.
+  return finish !== "stop" && finish !== "tool-calls";
 }
 
 export function shouldSkipAutoContinueForMessages(messages: AutoContinueMessage[]): boolean {

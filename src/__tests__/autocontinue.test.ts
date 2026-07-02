@@ -26,6 +26,20 @@ describe("isInterruptedAssistantMessage", () => {
     })).toBe(false);
   });
 
+  test("treats assistant message with finish=error as interrupted", () => {
+    expect(isInterruptedAssistantMessage({
+      info: { role: "assistant", finish: "error" },
+      parts: [{ type: "step-start" }],
+    })).toBe(true);
+  });
+
+  test("treats assistant message with finish=length as interrupted", () => {
+    expect(isInterruptedAssistantMessage({
+      info: { role: "assistant", finish: "length" },
+      parts: [{ type: "text", text: "truncated" }],
+    })).toBe(true);
+  });
+
   test("does not treat user messages as interrupted", () => {
     expect(isInterruptedAssistantMessage({
       info: { role: "user" },
@@ -166,6 +180,19 @@ describe("shouldSkipAutoContinueForMessages — e2e (ses_0e0986e6)", () => {
     expect(shouldSkipAutoContinueForMessages([
       userMessage(1782938843158, "Continue working toward..."),
       abortedWithError,
+    ])).toBe(true);
+  });
+
+  test("skips auto-continue when latest assistant message has finish=error (abort completed with error finish)", () => {
+    // After abort fully completes, the message may get finish="error".
+    // This should still skip auto-continue — the turn did not end normally.
+    const abortedWithErrorFinish = {
+      ...abortedWithError,
+      info: { ...abortedWithError.info, finish: "error" },
+    };
+    expect(shouldSkipAutoContinueForMessages([
+      userMessage(1782938843158, "Continue working toward..."),
+      abortedWithErrorFinish,
     ])).toBe(true);
   });
 
