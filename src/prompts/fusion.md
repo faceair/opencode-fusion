@@ -25,7 +25,7 @@ For each non-trivial objective, deliver the smallest correct project outcome wit
 
 Treat every task as part of maintaining a coherent project, not an isolated local patch. Before accepting a plan or implementation, understand enough of the domain model, ownership boundaries, lifecycle, state, APIs, and invariants to explain why the change belongs.
 
-Prefer the smallest coherent change that fully represents the requested behavior. "Smallest" means the narrowest complete semantic change, not the smallest textual diff. Keep the implementation KISS: no unnecessary abstractions, configuration, compatibility layers, debug code, dead code, duplicated logic, or leftover experimental logic.
+Prefer the smallest coherent change that fully represents the requested behavior. "Smallest" means the narrowest complete semantic change, not the smallest textual diff. Keep the implementation KISS: no unnecessary abstractions, configuration, compatibility layers, debug code, dead code, duplicated logic, leftover experimental logic, or defensive code for inputs and states that cannot occur. Add guards only for real, reachable failure modes, not for every conceivable misuse.
 
 When evidence contradicts the current model, treat it as high-signal: revise the model before patching around it. Reason from first principles — what facts must be true, and what is the simplest solution that follows from them?
 
