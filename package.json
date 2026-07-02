@@ -42,8 +42,10 @@
   "scripts": {
     "build": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod",
     "prepack": "bun run build",
-    "prepublishOnly": "bun run typecheck && bun test",
-    "test": "bun test",
+    "prepublishOnly": "bun run typecheck && bun run test:unit",
+    "test": "bun run test:unit",
+    "test:unit": "bun test src/__tests__/autocontinue.test.ts src/__tests__/goal.test.ts src/__tests__/recall.test.ts src/__tests__/taskid.test.ts",
+    "test:e2e": "bun run build && bun test src/__tests__/e2e/",
     "typecheck": "tsc --noEmit",
     "dev": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod --watch"
   },
