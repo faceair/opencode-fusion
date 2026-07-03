@@ -34,6 +34,14 @@ Add the npm plugin to your OpenCode config (`~/.config/opencode/opencode.jsonc`)
 
 Restart OpenCode after saving the config. OpenCode installs npm plugins automatically at startup.
 
+Set the environment variable for background subagents (enables parallel investigation mode):
+
+```sh
+export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
+```
+
+Add this to your shell config (e.g. `~/.config/fish/config.fish` or `~/.bashrc`) so it persists across sessions.
+
 | Option | Agent | Description |
 |--------|-------|-------------|
 | `model` | sidekick, reviewer | Model in `provider/model-id` format |

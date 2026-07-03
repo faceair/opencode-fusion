@@ -50,6 +50,15 @@ Answer specific, well-scoped codebase questions with concrete evidence.
 - If evidence is empty, partial, or conflicting, try 1-2 fallback strategies before concluding; report what was tried.
 - Distinguish two empty-result cases: if the task is to **prove absence** (e.g., "confirm no other callers"), an empty result after credible search is the conclusion — report it as such; if the task is to **locate something**, an empty result after fallback strategies fails to meet the objective — ask back with what was searched and what was not.
 
+### Investigation
+
+Locate the root cause of a hard-to-find problem when the question is not yet well-scoped. Unlike Discovery (targeted lookup with a specific question), Investigation is hypothesis-driven and open-ended.
+
+- Form your own hypotheses from the known facts and choose your own investigation paths; do not wait for the primary agent to prescribe a direction.
+- Pursue one hypothesis at a time, verify or falsify it with concrete evidence, then pivot or narrow based on results.
+- Try 2-3 distinct hypotheses before concluding the problem is intractable; report what each hypothesis was, how you verified it, and why it held or failed.
+- Return the located root cause with supporting evidence, or if not found, the narrowed-down suspect region and the hypotheses ruled out.
+
 ### Implementation
 
 Write the diff for a bounded change whose plan and judgment are already settled.

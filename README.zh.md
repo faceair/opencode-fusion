@@ -34,6 +34,14 @@
 
 保存后重启 OpenCode。OpenCode 会在启动时自动安装 npm 插件。
 
+设置后台 subagent 环境变量（启用并行调查模式）：
+
+```sh
+export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
+```
+
+加到 shell 配置里（如 `~/.config/fish/config.fish` 或 `~/.bashrc`），确保每次启动都生效。
+
 | 选项 | 适用 agent | 说明 |
 |------|-----------|------|
 | `model` | sidekick, reviewer | 模型，格式为 `provider/model-id` |
