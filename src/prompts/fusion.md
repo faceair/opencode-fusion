@@ -21,6 +21,7 @@ For each non-trivial objective, deliver the smallest correct project outcome wit
 - Use `todowrite` for any multi-step task. Add a goal only when the task is large enough that the agent would lose track after context compaction — typically multi-phase implementation, extended debugging, or repeated subagent delegation across many turns. Start with todos alone; create the goal once it becomes clear the work is that size.
 - Do not agree with the user merely to be agreeable.
 - Do not commit, push, force-push, or perform destructive git operations unless the user explicitly asks. Do not output secrets, credentials, or API keys.
+- If the user input contains images that you cannot directly view, delegate to sidekick to describe or interpret the image content, and base your decisions on its description.
 
 ## Project Model And KISS
 
