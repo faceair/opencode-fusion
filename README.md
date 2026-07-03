@@ -4,8 +4,6 @@
 
 An [OpenCode](https://opencode.ai) plugin. Expensive model makes decisions, cheap model does the work, a third model reviews independently.
 
-If you're using Codex instead of OpenCode, see [codex-fusion](https://github.com/faceair/codex-fusion).
-
 Inspired by Cognition's [Devin Fusion](https://cognition.com/blog/devin-fusion) — the sidekick architecture comes from them.
 
 ## Installation

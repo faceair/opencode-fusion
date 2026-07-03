@@ -4,8 +4,6 @@
 
 一个 [OpenCode](https://opencode.ai) 插件。贵的模型做决策，便宜的模型干活，第三个模型独立审查。
 
-如果你用的是 Codex 而不是 OpenCode，看 [codex-fusion](https://github.com/faceair/codex-fusion)。
-
 灵感来自 Cognition 的 [Devin Fusion](https://cognition.com/blog/devin-fusion)，sidekick 架构来自他们。
 
 ## 安装
