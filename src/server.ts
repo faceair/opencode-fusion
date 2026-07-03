@@ -229,6 +229,7 @@ const plugin: Plugin = async (input, options) => {
         ...(sidekick.variant ? { variant: sidekick.variant } : {}),
         ...(Object.keys(sidekick.options ?? {}).length > 0 ? { options: sidekick.options } : {}),
         prompt: SIDEKICK_SYSTEM_PROMPT,
+        tools: { get_goal: false, set_goal: false, update_goal: false, get_task_ids: false },
       };
       agent.reviewer = {
         description:
@@ -239,6 +240,7 @@ const plugin: Plugin = async (input, options) => {
         ...(Object.keys(reviewer.options ?? {}).length > 0 ? { options: reviewer.options } : {}),
         prompt: REVIEWER_SYSTEM_PROMPT,
         permission: { edit: "deny" },
+        tools: { get_goal: false, set_goal: false, update_goal: false, get_task_ids: false },
       };
       config.agent = agent;
     },
