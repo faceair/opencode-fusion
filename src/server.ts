@@ -5,7 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
-import { extractAllTaskIds, extractSidekickTaskId, extractReviewerTaskId, compactionInjectContext } from "./taskid.js";
+import { extractAllTaskIds } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -250,31 +250,6 @@ const plugin: Plugin = async (input, options) => {
       const g = await goal.getGoal(input.sessionID);
       if (g?.status === "active") {
         output.enabled = false;
-      }
-    },
-
-    async "experimental.session.compacting"(hookInput, output) {
-      try {
-        const raw = await client.session.messages({
-          path: { id: hookInput.sessionID },
-          query: { limit: 80 },
-        } as any);
-        const data = (raw?.data ?? raw) as RecallMessage[];
-        output.context.push(
-          ...compactionInjectContext(
-            extractSidekickTaskId(data),
-            extractReviewerTaskId(data),
-          ),
-        );
-      } catch (error) {
-        await input.client.app?.log?.({
-          body: {
-            service: "opencode-fusion",
-            level: "error",
-            message: "Compaction task_id injection failed",
-            extra: { error: error instanceof Error ? error.message : String(error) },
-          },
-        });
       }
     },
 

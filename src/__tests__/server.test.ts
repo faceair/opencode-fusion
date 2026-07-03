@@ -75,25 +75,6 @@ async function makeHooks(
   return { hooks: hooks as any, prompts, logs };
 }
 
-async function makeHooksWithMessageError(error: Error) {
-  const logs: unknown[] = [];
-  const client = {
-    session: {
-      messages: async () => {
-        throw error;
-      },
-      promptAsync: async () => {},
-    },
-    app: {
-      log: async (input: unknown) => {
-        logs.push(input);
-      },
-    },
-  };
-  const hooks = await plugin.server({ client } as any, undefined);
-  return { hooks: hooks as any, logs };
-}
-
 function idleEvent(sessionID: string) {
   return { type: "session.idle", properties: { sessionID } };
 }
@@ -112,55 +93,12 @@ describe("server compaction hooks", () => {
     });
   });
 
-  test("get_task_ids returns nulls without task calls", async () => {
+  test("get_task_ids returns empty object without task calls", async () => {
     const { hooks } = await makeHooks([[normalAssistantMessage()]]);
 
     const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_no_tasks" }));
 
     expect(output).toEqual({});
-  });
-
-  test("experimental.session.compacting injects sidekick and reviewer task_id context", async () => {
-    const { hooks, prompts } = await makeHooks([
-      [taskMessage("sidekick", "ses_side123"), taskMessage("reviewer", "ses_rev123")],
-    ]);
-    const output = { context: [] as string[] };
-
-    await hooks["experimental.session.compacting"]({ sessionID: "ses_compact" }, output);
-
-    expect(prompts.length).toBe(0);
-    expect(output.context).toHaveLength(1);
-    expect(output.context[0]).toContain("Subagent task_ids — preserve in summary");
-    expect(output.context[0]).toContain('Sidekick task_id: ses_side123 (last dispatch: "sidekick work")');
-    expect(output.context[0]).toContain('Reviewer task_id: ses_rev123 (last dispatch: "reviewer review")');
-    expect(output.context[0]).toContain('"## Critical Context"');
-  });
-
-  test("experimental.session.compacting leaves context empty without task_ids", async () => {
-    const { hooks } = await makeHooks([[normalAssistantMessage()]]);
-    const output = { context: [] as string[] };
-
-    await hooks["experimental.session.compacting"]({ sessionID: "ses_no_tasks" }, output);
-
-    expect(output.context).toEqual([]);
-  });
-
-  test("experimental.session.compacting logs and leaves context unchanged when messages fail", async () => {
-    const { hooks, logs } = await makeHooksWithMessageError(new Error("messages failed"));
-    const output = { context: ["existing context"] as string[] };
-
-    await expect(hooks["experimental.session.compacting"]({ sessionID: "ses_fail" }, output)).resolves.toBeUndefined();
-
-    expect(output.context).toEqual(["existing context"]);
-    expect(logs).toHaveLength(1);
-    expect(logs[0]).toMatchObject({
-      body: {
-        service: "opencode-fusion",
-        level: "error",
-        message: "Compaction task_id injection failed",
-        extra: { error: "messages failed" },
-      },
-    });
   });
 
   test("idle auto-continue still sends goal continuation after compaction", async () => {

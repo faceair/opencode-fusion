@@ -35,14 +35,15 @@ function extractTaskId(value: unknown): string | null {
   return null;
 }
 
-function isTaskPartForSubagent(part: unknown, subagentType: string): boolean {
+function taskPartSubagentType(part: unknown): string | null {
   const p = asRecord(part);
-  if (!p) return false;
+  if (!p) return null;
   const name = p.tool ?? p.name;
-  if (name !== "task") return false;
+  if (name !== "task") return null;
   const state = asRecord(p.state);
-  const input = state?.input ?? p.input;
-  return asRecord(input)?.subagent_type === subagentType;
+  const input = asRecord(state?.input ?? p.input);
+  const subagentType = input?.subagent_type;
+  return typeof subagentType === "string" && subagentType ? subagentType : null;
 }
 
 function partTaskInfo(part: unknown): TaskInfo | null {
@@ -61,17 +62,6 @@ function messageParts(message: RecallMessage): unknown[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 
-function taskPartSubagentType(part: unknown): string | null {
-  const p = asRecord(part);
-  if (!p) return null;
-  const name = p.tool ?? p.name;
-  if (name !== "task") return null;
-  const state = asRecord(p.state);
-  const input = asRecord(state?.input ?? p.input);
-  const subagentType = input?.subagent_type;
-  return typeof subagentType === "string" && subagentType ? subagentType : null;
-}
-
 /** Extract all task_ids from task tool calls, grouped by subagent type, newest-first. */
 export function extractAllTaskIds(messages: RecallMessage[]): Record<string, TaskInfo[]> {
   const result: Record<string, TaskInfo[]> = {};
@@ -87,51 +77,4 @@ export function extractAllTaskIds(messages: RecallMessage[]): Record<string, Tas
     }
   }
   return result;
-}
-
-/** Extract the latest task_id from task tool calls for the given subagent type. */
-function extractTaskIdForSubagent(
-  messages: RecallMessage[],
-  subagentType: string,
-): TaskInfo | null {
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const parts = messageParts(messages[i]);
-    for (let j = parts.length - 1; j >= 0; j--) {
-      const part = parts[j];
-      if (!isTaskPartForSubagent(part, subagentType)) continue;
-      const info = partTaskInfo(part);
-      if (info) return info;
-    }
-  }
-  return null;
-}
-
-/** Extract the latest sidekick task_id. Preserved for backward compatibility. */
-export function extractSidekickTaskId(messages: RecallMessage[]): TaskInfo | null {
-  return extractTaskIdForSubagent(messages, "sidekick");
-}
-
-/** Extract the latest reviewer task_id. */
-export function extractReviewerTaskId(messages: RecallMessage[]): TaskInfo | null {
-  return extractTaskIdForSubagent(messages, "reviewer");
-}
-
-/** Render compaction prompt context that preserves subagent task_ids in the summary. */
-export function compactionInjectContext(
-  sidekick?: TaskInfo | null,
-  reviewer?: TaskInfo | null,
-): string[] {
-  const lines: string[] = [];
-  if (sidekick) {
-    lines.push(`Sidekick task_id: ${sidekick.task_id}${sidekick.description ? ` (last dispatch: "${sidekick.description}")` : ""}`);
-  }
-  if (reviewer) {
-    lines.push(`Reviewer task_id: ${reviewer.task_id}${reviewer.description ? ` (last dispatch: "${reviewer.description}")` : ""}`);
-  }
-  if (lines.length === 0) return [];
-  return [`[Subagent task_ids — preserve in summary]
-
-${lines.join("\n")}
-
-These task_ids are session handles for resuming subagent sessions. You MUST preserve them verbatim in the "## Critical Context" section of the summary. Reuse a task_id to continue the same subagent thread; do not start a fresh subagent unless the prior thread is unrelated or recovery fails.`];
 }
