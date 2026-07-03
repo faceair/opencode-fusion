@@ -49,10 +49,19 @@ function sessionIDFromEvent(event: any): string | undefined {
   return;
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 const activeContinuations = new Set<string>();
-// Sessions that just received a compaction recovery prompt; auto-continue
-// skips these to avoid sending a redundant continuation.
-const compactionRecoverySessions = new Set<string>();
+// Resolves true when compaction already sent a goal continuation; idle events
+// that arrive during compaction wait for the result, then either skip or fall
+// back to the normal idle auto-continue path.
+const activeCompactions = new Map<string, Promise<boolean>>();
 
 const plugin: Plugin = async (input, options) => {
   const { sidekick, reviewer } = parseOptions(options);
@@ -238,6 +247,9 @@ const plugin: Plugin = async (input, options) => {
       if (event.type === "session.compacted") {
         const sessionID = (event as any).properties?.sessionID;
         if (typeof sessionID !== "string") return;
+        const compaction = deferred<boolean>();
+        activeCompactions.set(sessionID, compaction.promise);
+        let sentGoalContinuation = false;
         try {
           const raw = await client.session.messages({
             path: { id: sessionID },
@@ -250,11 +262,9 @@ const plugin: Plugin = async (input, options) => {
           const taskCtx = compactionContext(sidekick, reviewer);
           const g = await goal.getGoal(sessionID);
           if (g?.status === "active") {
-            // Mark this session as having received a compaction recovery prompt
-            // so the idle auto-continue handler skips the redundant continuation.
-            compactionRecoverySessions.add(sessionID);
             const prompt = `${goal.continuationPrompt(g)}\n\n${taskCtx}`;
             await sendContinuation(sessionID, prompt);
+            sentGoalContinuation = true;
           } else {
             await sendContinuation(sessionID, taskCtx);
           }
@@ -267,21 +277,23 @@ const plugin: Plugin = async (input, options) => {
               extra: { error: error instanceof Error ? error.message : String(error) },
             },
           });
+        } finally {
+          compaction.resolve(sentGoalContinuation);
+          activeCompactions.delete(sessionID);
         }
         return;
       }
-      // Auto-continue on idle: skip if a compaction recovery prompt was just sent.
+      // Auto-continue on idle: wait for in-flight compaction recovery so it can
+      // either suppress a duplicate continuation or fall back to this path.
       if (!isIdleEvent(event)) return;
       const sessionID = sessionIDFromEvent(event);
       if (!sessionID) return;
       if (activeContinuations.has(sessionID)) return;
-      if (compactionRecoverySessions.has(sessionID)) {
-        compactionRecoverySessions.delete(sessionID);
-        return;
-      }
 
       activeContinuations.add(sessionID);
       try {
+        const compaction = activeCompactions.get(sessionID);
+        if (compaction && await compaction) return;
         const currentGoal = await goal.getGoal(sessionID);
         if (currentGoal?.status !== "active") return;
         if (await shouldSkipAutoContinue(sessionID)) return;
