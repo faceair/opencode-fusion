@@ -183,6 +183,44 @@ describe("opencode-fusion e2e", () => {
     });
   }, 90_000);
 
+  it("get_task_ids returns the sidekick task_id after a task tool call", async () => {
+    await withFusionEnv(async (env) => {
+      // Turn 1: call the task tool with subagent_type=sidekick.
+      env.llm.tool("task", {
+        description: "sidekick id lookup",
+        prompt: "do something small",
+        subagent_type: "sidekick",
+      });
+      const { sessionID } = await createAndPromptForTool(env, "delegate to sidekick", "task", { timeoutMs: 60_000 });
+
+      const taskPart = await waitForToolComplete(env.client, sessionID, "task", 60_000);
+      const taskState = taskPart.state as Record<string, unknown>;
+      expect(taskState.status).toBe("completed");
+      const taskOutput = taskState.output as string;
+      const taskIdMatch = taskOutput.match(/<task\s+id="(ses_[^"]+)"/);
+      expect(taskIdMatch).not.toBeNull();
+      const taskId = taskIdMatch![1]!;
+
+      // Turn 2: call get_task_ids and verify it recovers the sidekick handle.
+      env.llm.tool("get_task_ids", {});
+      await env.client.session.promptAsync({
+        path: { id: sessionID },
+        body: {
+          agent: "fusion",
+          model: { providerID: "test", modelID: "test-model" },
+          parts: [{ type: "text", text: "recover task ids" }],
+        },
+      } as any);
+
+      const getTaskIdsPart = await waitForToolComplete(env.client, sessionID, "get_task_ids", 30_000);
+      const getTaskIdsState = getTaskIdsPart.state as Record<string, unknown>;
+      expect(getTaskIdsState.status).toBe("completed");
+      const output = JSON.parse(getTaskIdsState.output as string);
+      expect(output.sidekick).toEqual({ task_id: taskId, description: "sidekick id lookup" });
+      expect(output.reviewer).toBeNull();
+    });
+  }, 90_000);
+
   it("update_goal complete closes the goal in state file", async () => {
     await withFusionEnv(async (env) => {
       // Turn 1: set a goal.
@@ -503,9 +541,9 @@ describe("opencode-fusion e2e", () => {
     );
   }, 90_000);
 
-  it("session.compacted event injects sidekick task_id as a post-compaction user message", async () => {
+  it("compaction summary request includes injected sidekick task_id context", async () => {
     // True e2e: forces compaction after a sidekick task tool call, then
-    // verifies the task_id is recovered and sent as a user message after compaction.
+    // verifies the task_id context is injected into the compaction summary request.
     await withFusionEnv(
       async (env) => {
         // Turn 1: set a goal (needed so auto-continue is active to consume the task_ids).
@@ -528,7 +566,7 @@ describe("opencode-fusion e2e", () => {
         const taskIdMatch = taskOutput.match(/<task\s+id="(ses_[^"]+)"/);
         const taskId = taskIdMatch![1]!;
 
-        // Reset LLM hits to cleanly capture post-compaction requests.
+        // Reset LLM hits to cleanly capture compaction requests.
         env.llm.reset();
 
         // Turn 3: trigger compaction with high usage.
@@ -544,35 +582,36 @@ describe("opencode-fusion e2e", () => {
           },
         } as any);
 
-        // Wait for a post-compaction LLM request that contains the sidekick task_id.
-        // The fusion plugin's session.compacted handler sends a continuation prompt
-        // that includes the recovered task_id, which triggers a new LLM turn.
+        // Wait for the compaction LLM request that contains the injected sidekick task_id context.
         const start = Date.now();
-        let recoveryHit: { url: string; body: Record<string, unknown> } | null = null;
+        let compactionHit: { url: string; body: Record<string, unknown> } | null = null;
         while (Date.now() - start < 30_000) {
           const hits = env.llm.hits;
-          recoveryHit = hits.find(
+          compactionHit = hits.find(
             (h) =>
               !isTitleBody(h.body) &&
+              JSON.stringify(h.body).includes("Subagent task_ids — preserve in summary") &&
               JSON.stringify(h.body).includes("Sidekick task_id"),
           ) ?? null;
-          if (recoveryHit) break;
+          if (compactionHit) break;
           await Bun.sleep(300);
         }
 
-        expect(recoveryHit).not.toBeNull();
-        const bodyStr = JSON.stringify(recoveryHit!.body);
+        expect(compactionHit).not.toBeNull();
+        const bodyStr = JSON.stringify(compactionHit!.body);
+        expect(bodyStr).toContain("preserve in summary");
         expect(bodyStr).toContain("Sidekick task_id");
         expect(bodyStr).toContain(taskId);
         expect(bodyStr).toContain("sidekick work");
+        expect(bodyStr).toContain("## Critical Context");
       },
       { modelLimit: { context: 500, output: 100 }, enableAutoCompact: true },
     );
   }, 120_000);
 
-  it("session.compacted event injects reviewer task_id as a post-compaction user message", async () => {
+  it("compaction summary request includes injected reviewer task_id context", async () => {
     // True e2e: forces compaction after a reviewer task tool call, then
-    // verifies the reviewer task_id is recovered and sent as a user message after compaction.
+    // verifies the reviewer task_id context is injected into the compaction summary request.
     await withFusionEnv(
       async (env) => {
         // Turn 1: set a goal.
@@ -594,7 +633,7 @@ describe("opencode-fusion e2e", () => {
         const taskIdMatch = taskOutput.match(/<task\s+id="(ses_[^"]+)"/);
         const taskId = taskIdMatch![1]!;
 
-        // Reset LLM hits to cleanly capture post-compaction requests.
+        // Reset LLM hits to cleanly capture compaction requests.
         env.llm.reset();
 
         // Turn 3: trigger compaction with high usage.
@@ -610,25 +649,28 @@ describe("opencode-fusion e2e", () => {
           },
         } as any);
 
-        // Wait for a post-compaction LLM request that contains the reviewer task_id.
+        // Wait for the compaction LLM request that contains the injected reviewer task_id context.
         const start = Date.now();
-        let recoveryHit: { url: string; body: Record<string, unknown> } | null = null;
+        let compactionHit: { url: string; body: Record<string, unknown> } | null = null;
         while (Date.now() - start < 30_000) {
           const hits = env.llm.hits;
-          recoveryHit = hits.find(
+          compactionHit = hits.find(
             (h) =>
               !isTitleBody(h.body) &&
+              JSON.stringify(h.body).includes("Subagent task_ids — preserve in summary") &&
               JSON.stringify(h.body).includes("Reviewer task_id"),
           ) ?? null;
-          if (recoveryHit) break;
+          if (compactionHit) break;
           await Bun.sleep(300);
         }
 
-        expect(recoveryHit).not.toBeNull();
-        const bodyStr = JSON.stringify(recoveryHit!.body);
+        expect(compactionHit).not.toBeNull();
+        const bodyStr = JSON.stringify(compactionHit!.body);
+        expect(bodyStr).toContain("preserve in summary");
         expect(bodyStr).toContain("Reviewer task_id");
         expect(bodyStr).toContain(taskId);
         expect(bodyStr).toContain("reviewer review");
+        expect(bodyStr).toContain("## Critical Context");
       },
       { modelLimit: { context: 500, output: 100 }, enableAutoCompact: true },
     );

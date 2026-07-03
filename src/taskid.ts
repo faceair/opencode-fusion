@@ -88,11 +88,11 @@ export function extractReviewerTaskId(messages: RecallMessage[]): TaskInfo | nul
   return extractTaskIdForSubagent(messages, "reviewer");
 }
 
-/** Render recovery context for subagent task_ids after compaction. Returns empty string when no task_ids. */
-export function compactionContext(
+/** Render compaction prompt context that preserves subagent task_ids in the summary. */
+export function compactionInjectContext(
   sidekick?: TaskInfo | null,
   reviewer?: TaskInfo | null,
-): string {
+): string[] {
   const lines: string[] = [];
   if (sidekick) {
     lines.push(`Sidekick task_id: ${sidekick.task_id}${sidekick.description ? ` (last dispatch: "${sidekick.description}")` : ""}`);
@@ -100,10 +100,10 @@ export function compactionContext(
   if (reviewer) {
     lines.push(`Reviewer task_id: ${reviewer.task_id}${reviewer.description ? ` (last dispatch: "${reviewer.description}")` : ""}`);
   }
-  if (lines.length === 0) return "";
-  return `[Subagent task_ids — recovered after compaction]
+  if (lines.length === 0) return [];
+  return [`[Subagent task_ids — preserve in summary]
 
 ${lines.join("\n")}
 
-These task_ids are session handles for resuming subagent sessions. Reuse a task_id to continue the same subagent thread; do not start a fresh subagent unless the prior thread is unrelated or recovery fails.`;
+These task_ids are session handles for resuming subagent sessions. You MUST preserve them verbatim in the "## Critical Context" section of the summary. Reuse a task_id to continue the same subagent thread; do not start a fresh subagent unless the prior thread is unrelated or recovery fails.`];
 }

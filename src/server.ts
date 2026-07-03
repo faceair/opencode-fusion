@@ -5,7 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
-import { extractSidekickTaskId, extractReviewerTaskId, compactionContext } from "./taskid.js";
+import { extractSidekickTaskId, extractReviewerTaskId, compactionInjectContext } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -49,19 +49,7 @@ function sessionIDFromEvent(event: any): string | undefined {
   return;
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  const promise = new Promise<T>((res) => {
-    resolve = res;
-  });
-  return { promise, resolve };
-}
-
 const activeContinuations = new Set<string>();
-// Resolves true when compaction already sent a goal continuation; idle events
-// that arrive during compaction wait for the result, then either skip or fall
-// back to the normal idle auto-continue path.
-const activeCompactions = new Map<string, Promise<boolean>>();
 
 const plugin: Plugin = async (input, options) => {
   const { sidekick, reviewer } = parseOptions(options);
@@ -169,6 +157,33 @@ const plugin: Plugin = async (input, options) => {
     },
   };
 
+  const taskTools = {
+    get_task_ids: {
+      description:
+        "Get the currently saved sidekick and reviewer task_ids for this session by scanning message history. Use after compaction if task_ids are missing from the summary, or whenever you need to verify the active subagent session handles before dispatching. Returns null for a subagent type if no task tool call is found.",
+      args: {},
+      async execute(_args: any, context: any) {
+        try {
+          const raw = await client.session.messages({
+            path: { id: context.sessionID },
+            query: { limit: 80 },
+          } as any);
+          const data = (raw?.data ?? raw) as RecallMessage[];
+          return JSON.stringify({
+            sidekick: extractSidekickTaskId(data),
+            reviewer: extractReviewerTaskId(data),
+          }, null, 2);
+        } catch (error) {
+          return JSON.stringify({
+            sidekick: null,
+            reviewer: null,
+            error: error instanceof Error ? error.message : String(error),
+          }, null, 2);
+        }
+      },
+    },
+  };
+
   async function sendContinuation(sessionID: string, prompt: string) {
     await client.session.promptAsync({
       path: { id: sessionID },
@@ -231,6 +246,7 @@ const plugin: Plugin = async (input, options) => {
     tool: {
       ...goalTools,
       ...recallTools,
+      ...taskTools,
     } as any,
 
     async "experimental.compaction.autocontinue"(input, output) {
@@ -240,51 +256,32 @@ const plugin: Plugin = async (input, options) => {
       }
     },
 
-    async event({ event }) {
-      // On compaction completion: extract task_ids from pre-compaction history
-      // and send a recovery prompt. If an active goal exists, the recovery prompt
-      // doubles as the continuation prompt (auto-continue is skipped for this cycle).
-      if (event.type === "session.compacted") {
-        const sessionID = (event as any).properties?.sessionID;
-        if (typeof sessionID !== "string") return;
-        const compaction = deferred<boolean>();
-        activeCompactions.set(sessionID, compaction.promise);
-        let sentGoalContinuation = false;
-        try {
-          const raw = await client.session.messages({
-            path: { id: sessionID },
-            query: { limit: 80 },
-          } as any);
-          const data = (raw?.data ?? raw) as RecallMessage[];
-          const sidekick = extractSidekickTaskId(data);
-          const reviewer = extractReviewerTaskId(data);
-          if (!sidekick && !reviewer) return;
-          const taskCtx = compactionContext(sidekick, reviewer);
-          const g = await goal.getGoal(sessionID);
-          if (g?.status === "active") {
-            const prompt = `${goal.continuationPrompt(g)}\n\n${taskCtx}`;
-            await sendContinuation(sessionID, prompt);
-            sentGoalContinuation = true;
-          } else {
-            await sendContinuation(sessionID, taskCtx);
-          }
-        } catch (error) {
-          await input.client.app?.log?.({
-            body: {
-              service: "opencode-fusion",
-              level: "error",
-              message: "Compaction task_id recovery failed",
-              extra: { error: error instanceof Error ? error.message : String(error) },
-            },
-          });
-        } finally {
-          compaction.resolve(sentGoalContinuation);
-          activeCompactions.delete(sessionID);
-        }
-        return;
+    async "experimental.session.compacting"(hookInput, output) {
+      try {
+        const raw = await client.session.messages({
+          path: { id: hookInput.sessionID },
+          query: { limit: 80 },
+        } as any);
+        const data = (raw?.data ?? raw) as RecallMessage[];
+        output.context.push(
+          ...compactionInjectContext(
+            extractSidekickTaskId(data),
+            extractReviewerTaskId(data),
+          ),
+        );
+      } catch (error) {
+        await input.client.app?.log?.({
+          body: {
+            service: "opencode-fusion",
+            level: "error",
+            message: "Compaction task_id injection failed",
+            extra: { error: error instanceof Error ? error.message : String(error) },
+          },
+        });
       }
-      // Auto-continue on idle: wait for in-flight compaction recovery so it can
-      // either suppress a duplicate continuation or fall back to this path.
+    },
+
+    async event({ event }) {
       if (!isIdleEvent(event)) return;
       const sessionID = sessionIDFromEvent(event);
       if (!sessionID) return;
@@ -292,8 +289,6 @@ const plugin: Plugin = async (input, options) => {
 
       activeContinuations.add(sessionID);
       try {
-        const compaction = activeCompactions.get(sessionID);
-        if (compaction && await compaction) return;
         const currentGoal = await goal.getGoal(sessionID);
         if (currentGoal?.status !== "active") return;
         if (await shouldSkipAutoContinue(sessionID)) return;

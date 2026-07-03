@@ -20,26 +20,7 @@ afterEach(async () => {
   tempDir = null;
 });
 
-function deferred<T = void>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason?: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
-async function waitFor(predicate: () => boolean) {
-  const start = Date.now();
-  while (Date.now() - start < 1000) {
-    if (predicate()) return;
-    await Bun.sleep(5);
-  }
-  throw new Error("timed out waiting for test condition");
-}
-
-function taskMessage(taskID = "ses_side123"): RecallMessage {
+function taskMessage(subagentType: "sidekick" | "reviewer" = "sidekick", taskID = "ses_side123"): RecallMessage {
   return {
     type: "assistant",
     parts: [
@@ -49,9 +30,9 @@ function taskMessage(taskID = "ses_side123"): RecallMessage {
         state: {
           status: "completed",
           input: {
-            subagent_type: "sidekick",
-            description: "sidekick work",
-            prompt: "do work",
+            subagent_type: subagentType,
+            description: subagentType === "sidekick" ? "sidekick work" : "reviewer review",
+            prompt: subagentType === "sidekick" ? "do work" : "review work",
           },
           output: `<task id="${taskID}" state="completed">done</task>`,
         },
@@ -94,116 +75,104 @@ async function makeHooks(
   return { hooks: hooks as any, prompts, logs };
 }
 
-function compactedEvent(sessionID: string) {
-  return { type: "session.compacted", properties: { sessionID } };
+async function makeHooksWithMessageError(error: Error) {
+  const logs: unknown[] = [];
+  const client = {
+    session: {
+      messages: async () => {
+        throw error;
+      },
+      promptAsync: async () => {},
+    },
+    app: {
+      log: async (input: unknown) => {
+        logs.push(input);
+      },
+    },
+  };
+  const hooks = await plugin.server({ client } as any, undefined);
+  return { hooks: hooks as any, logs };
 }
 
 function idleEvent(sessionID: string) {
   return { type: "session.idle", properties: { sessionID } };
 }
 
-describe("server compaction auto-continue coordination", () => {
-  test("compacted before idle sends one recovery continuation with task_id", async () => {
-    const sessionID = "ses_compact_first";
-    await goal.createGoal(sessionID, "compact first goal");
-    const promptGate = deferred();
-    const { hooks, prompts } = await makeHooks([[taskMessage()]], [promptGate.promise]);
+describe("server compaction hooks", () => {
+  test("get_task_ids returns extracted sidekick and reviewer task_ids", async () => {
+    const { hooks } = await makeHooks([
+      [taskMessage("sidekick", "ses_side123"), taskMessage("reviewer", "ses_rev123")],
+    ]);
 
-    const compact = hooks.event({ event: compactedEvent(sessionID) });
-    await waitFor(() => prompts.length === 1);
-    const idle = hooks.event({ event: idleEvent(sessionID) });
+    const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_tasks" }));
 
-    promptGate.resolve();
-    await compact;
-    await idle;
-
-    expect(prompts.length).toBe(1);
-    expect(prompts[0]).toContain("Continue working toward the current goal");
-    expect(prompts[0]).toContain("Sidekick task_id: ses_side123");
+    expect(output).toEqual({
+      sidekick: { task_id: "ses_side123", description: "sidekick work" },
+      reviewer: { task_id: "ses_rev123", description: "reviewer review" },
+    });
   });
 
-  test("idle during compact recovery is suppressed and only recovery continuation is sent", async () => {
-    const sessionID = "ses_idle_during_compact";
-    await goal.createGoal(sessionID, "idle during compact goal");
-    const compactMessages = deferred<RecallMessage[]>();
-    const { hooks, prompts } = await makeHooks([compactMessages.promise]);
+  test("get_task_ids returns nulls without task calls", async () => {
+    const { hooks } = await makeHooks([[normalAssistantMessage()]]);
 
-    const compact = hooks.event({ event: compactedEvent(sessionID) });
-    const idle = hooks.event({ event: idleEvent(sessionID) });
-    await Bun.sleep(0);
-    expect(prompts.length).toBe(0);
+    const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_no_tasks" }));
 
-    compactMessages.resolve([taskMessage()]);
-    await compact;
-    await idle;
-
-    expect(prompts.length).toBe(1);
-    expect(prompts[0]).toContain("Continue working toward the current goal");
-    expect(prompts[0]).toContain("Sidekick task_id: ses_side123");
+    expect(output).toEqual({ sidekick: null, reviewer: null });
   });
 
-  test("compaction without task_id falls back to normal idle continuation", async () => {
-    const sessionID = "ses_compact_no_task";
-    await goal.createGoal(sessionID, "no task compact goal");
-    const compactMessages = deferred<RecallMessage[]>();
+  test("experimental.session.compacting injects sidekick and reviewer task_id context", async () => {
     const { hooks, prompts } = await makeHooks([
-      compactMessages.promise,
-      [normalAssistantMessage()],
+      [taskMessage("sidekick", "ses_side123"), taskMessage("reviewer", "ses_rev123")],
     ]);
+    const output = { context: [] as string[] };
 
-    const compact = hooks.event({ event: compactedEvent(sessionID) });
-    const idle = hooks.event({ event: idleEvent(sessionID) });
-    compactMessages.resolve([]);
-    await compact;
-    await idle;
+    await hooks["experimental.session.compacting"]({ sessionID: "ses_compact" }, output);
+
+    expect(prompts.length).toBe(0);
+    expect(output.context).toHaveLength(1);
+    expect(output.context[0]).toContain("Subagent task_ids — preserve in summary");
+    expect(output.context[0]).toContain('Sidekick task_id: ses_side123 (last dispatch: "sidekick work")');
+    expect(output.context[0]).toContain('Reviewer task_id: ses_rev123 (last dispatch: "reviewer review")');
+    expect(output.context[0]).toContain('"## Critical Context"');
+  });
+
+  test("experimental.session.compacting leaves context empty without task_ids", async () => {
+    const { hooks } = await makeHooks([[normalAssistantMessage()]]);
+    const output = { context: [] as string[] };
+
+    await hooks["experimental.session.compacting"]({ sessionID: "ses_no_tasks" }, output);
+
+    expect(output.context).toEqual([]);
+  });
+
+  test("experimental.session.compacting logs and leaves context unchanged when messages fail", async () => {
+    const { hooks, logs } = await makeHooksWithMessageError(new Error("messages failed"));
+    const output = { context: ["existing context"] as string[] };
+
+    await expect(hooks["experimental.session.compacting"]({ sessionID: "ses_fail" }, output)).resolves.toBeUndefined();
+
+    expect(output.context).toEqual(["existing context"]);
+    expect(logs).toHaveLength(1);
+    expect(logs[0]).toMatchObject({
+      body: {
+        service: "opencode-fusion",
+        level: "error",
+        message: "Compaction task_id injection failed",
+        extra: { error: "messages failed" },
+      },
+    });
+  });
+
+  test("idle auto-continue still sends goal continuation after compaction", async () => {
+    const sessionID = "ses_idle_after_compact";
+    await goal.createGoal(sessionID, "idle after compact goal");
+    const { hooks, prompts } = await makeHooks([[normalAssistantMessage()]]);
+
+    await hooks.event({ event: idleEvent(sessionID) });
 
     expect(prompts.length).toBe(1);
     expect(prompts[0]).toContain("Continue working toward the current goal");
+    expect(prompts[0]).toContain("idle after compact goal");
     expect(prompts[0]).not.toContain("task_id");
-  });
-
-  test("compaction error falls back to normal idle continuation", async () => {
-    const sessionID = "ses_compact_error";
-    await goal.createGoal(sessionID, "compact error goal");
-    const compactMessages = deferred<RecallMessage[]>();
-    const { hooks, prompts, logs } = await makeHooks([
-      compactMessages.promise,
-      [normalAssistantMessage()],
-    ]);
-
-    const compact = hooks.event({ event: compactedEvent(sessionID) });
-    const idle = hooks.event({ event: idleEvent(sessionID) });
-    compactMessages.reject(new Error("messages failed"));
-    await compact;
-    await idle;
-
-    expect(logs.length).toBe(1);
-    expect(prompts.length).toBe(1);
-    expect(prompts[0]).toContain("Continue working toward the current goal");
-    expect(prompts[0]).not.toContain("task_id");
-  });
-
-  test("task_id recovery without active goal does not suppress normal idle continuation", async () => {
-    const sessionID = "ses_taskctx_then_continue";
-    const taskCtxGate = deferred();
-    const { hooks, prompts } = await makeHooks(
-      [[taskMessage()], [normalAssistantMessage()]],
-      [taskCtxGate.promise],
-    );
-
-    const compact = hooks.event({ event: compactedEvent(sessionID) });
-    await waitFor(() => prompts.length === 1);
-    expect(prompts[0]).toContain("Sidekick task_id: ses_side123");
-    expect(prompts[0]).not.toContain("Continue working toward the current goal");
-
-    await goal.createGoal(sessionID, "goal created before idle fallback");
-    const idle = hooks.event({ event: idleEvent(sessionID) });
-    taskCtxGate.resolve();
-    await compact;
-    await idle;
-
-    expect(prompts.length).toBe(2);
-    expect(prompts[1]).toContain("Continue working toward the current goal");
-    expect(prompts[1]).not.toContain("task_id");
   });
 });
