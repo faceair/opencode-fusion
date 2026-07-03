@@ -61,6 +61,34 @@ function messageParts(message: RecallMessage): unknown[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 
+function taskPartSubagentType(part: unknown): string | null {
+  const p = asRecord(part);
+  if (!p) return null;
+  const name = p.tool ?? p.name;
+  if (name !== "task") return null;
+  const state = asRecord(p.state);
+  const input = asRecord(state?.input ?? p.input);
+  const subagentType = input?.subagent_type;
+  return typeof subagentType === "string" && subagentType ? subagentType : null;
+}
+
+/** Extract all task_ids from task tool calls, grouped by subagent type, newest-first. */
+export function extractAllTaskIds(messages: RecallMessage[]): Record<string, TaskInfo[]> {
+  const result: Record<string, TaskInfo[]> = {};
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const parts = messageParts(messages[i]);
+    for (let j = parts.length - 1; j >= 0; j--) {
+      const part = parts[j];
+      const subagentType = taskPartSubagentType(part);
+      if (!subagentType) continue;
+      const info = partTaskInfo(part);
+      if (!info) continue;
+      (result[subagentType] ??= []).push(info);
+    }
+  }
+  return result;
+}
+
 /** Extract the latest task_id from task tool calls for the given subagent type. */
 function extractTaskIdForSubagent(
   messages: RecallMessage[],

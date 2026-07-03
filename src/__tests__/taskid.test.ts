@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { extractSidekickTaskId, extractReviewerTaskId } from "../taskid.js";
+import { extractAllTaskIds, extractSidekickTaskId, extractReviewerTaskId } from "../taskid.js";
 import type { RecallMessage } from "../recall.js";
 
 function toolPart(name: string, input: unknown, output: unknown): unknown {
@@ -275,5 +275,61 @@ describe("extractReviewerTaskId", () => {
     ];
     expect(extractSidekickTaskId(messages)?.task_id).toBe("ses_side_mixed");
     expect(extractReviewerTaskId(messages)?.task_id).toBe("ses_rev_mixed");
+  });
+});
+
+describe("extractAllTaskIds", () => {
+  it("collects all sidekick and reviewer entries grouped by type, newest-first, with descriptions", () => {
+    const messages = [
+      msg([realToolPart("task", { subagent_type: "sidekick", description: "old sidekick", prompt: "first" }, `<task id="ses_side_old" state="completed">old</task>`)]),
+      msg([realToolPart("task", { subagent_type: "reviewer", description: "reviewer review", prompt: "review" }, `<task id="ses_rev" state="completed">rev</task>`)]),
+      msg([realToolPart("task", { subagent_type: "sidekick", description: "new sidekick", prompt: "second" }, `<task id="ses_side_new" state="completed">new</task>`)]),
+    ];
+
+    expect(extractAllTaskIds(messages)).toEqual({
+      sidekick: [
+        { task_id: "ses_side_new", description: "new sidekick" },
+        { task_id: "ses_side_old", description: "old sidekick" },
+      ],
+      reviewer: [{ task_id: "ses_rev", description: "reviewer review" }],
+    });
+  });
+
+  it("handles mixed types in the same message list", () => {
+    const messages = [
+      msg([
+        realToolPart("task", { subagent_type: "sidekick", description: "side", prompt: "work" }, `<task id="ses_side" state="completed">side</task>`),
+        realToolPart("task", { subagent_type: "reviewer", description: "review", prompt: "review" }, `<task id="ses_review" state="completed">review</task>`),
+      ]),
+    ];
+
+    expect(extractAllTaskIds(messages)).toEqual({
+      reviewer: [{ task_id: "ses_review", description: "review" }],
+      sidekick: [{ task_id: "ses_side", description: "side" }],
+    });
+  });
+
+  it("returns an empty object for empty messages", () => {
+    expect(extractAllTaskIds([])).toEqual({});
+  });
+
+  it("handles real-shape ToolPart state.output JSON string and XML output", () => {
+    const messages = [
+      msg([realToolPart("task", { subagent_type: "sidekick", description: "json output", prompt: "work" }, { task_id: "ses_json" })]),
+      msg([realToolPart("task", { subagent_type: "reviewer", description: "xml output", prompt: "review" }, `<task id="ses_xml" state="completed">xml</task>`)]),
+    ];
+
+    expect(extractAllTaskIds(messages)).toEqual({
+      reviewer: [{ task_id: "ses_xml", description: "xml output" }],
+      sidekick: [{ task_id: "ses_json", description: "json output" }],
+    });
+  });
+
+  it("skips non-task tool calls", () => {
+    const messages = [
+      msg([realToolPart("recall_history", { subagent_type: "sidekick", description: "not task" }, { task_id: "ses_skip" })]),
+    ];
+
+    expect(extractAllTaskIds(messages)).toEqual({});
   });
 });

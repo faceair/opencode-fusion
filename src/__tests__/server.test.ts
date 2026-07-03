@@ -107,8 +107,8 @@ describe("server compaction hooks", () => {
     const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_tasks" }));
 
     expect(output).toEqual({
-      sidekick: { task_id: "ses_side123", description: "sidekick work" },
-      reviewer: { task_id: "ses_rev123", description: "reviewer review" },
+      sidekick: [{ task_id: "ses_side123", description: "sidekick work" }],
+      reviewer: [{ task_id: "ses_rev123", description: "reviewer review" }],
     });
   });
 
@@ -117,7 +117,7 @@ describe("server compaction hooks", () => {
 
     const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_no_tasks" }));
 
-    expect(output).toEqual({ sidekick: null, reviewer: null });
+    expect(output).toEqual({});
   });
 
   test("experimental.session.compacting injects sidekick and reviewer task_id context", async () => {

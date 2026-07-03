@@ -5,7 +5,7 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
-import { extractSidekickTaskId, extractReviewerTaskId, compactionInjectContext } from "./taskid.js";
+import { extractAllTaskIds, extractSidekickTaskId, extractReviewerTaskId, compactionInjectContext } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
@@ -160,7 +160,7 @@ const plugin: Plugin = async (input, options) => {
   const taskTools = {
     get_task_ids: {
       description:
-        "Get the currently saved sidekick and reviewer task_ids for this session by scanning message history. Use after compaction if task_ids are missing from the summary, or whenever you need to verify the active subagent session handles before dispatching. Returns null for a subagent type if no task tool call is found.",
+        "Get all saved subagent task_ids for this session by scanning message history, grouped by subagent type. Each entry includes task_id and description (last dispatch title), newest-first. Use after compaction or whenever you need to verify active subagent session handles before dispatching. Absent types are omitted.",
       args: {},
       async execute(_args: any, context: any) {
         try {
@@ -169,14 +169,9 @@ const plugin: Plugin = async (input, options) => {
             query: { limit: 80 },
           } as any);
           const data = (raw?.data ?? raw) as RecallMessage[];
-          return JSON.stringify({
-            sidekick: extractSidekickTaskId(data),
-            reviewer: extractReviewerTaskId(data),
-          }, null, 2);
+          return JSON.stringify(extractAllTaskIds(data), null, 2);
         } catch (error) {
           return JSON.stringify({
-            sidekick: null,
-            reviewer: null,
             error: error instanceof Error ? error.message : String(error),
           }, null, 2);
         }
