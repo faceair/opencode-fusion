@@ -201,7 +201,7 @@ const plugin: Plugin = async (input, options) => {
   const taskTools = {
     get_task_ids: {
       description:
-        "Get all saved subagent task_ids for this session by scanning message history, grouped by subagent type. Each entry includes task_id and description (last dispatch title), newest-first. Use after compaction or whenever you need to verify active subagent session handles before dispatching. Absent types are omitted.",
+        "Get all saved subagent task_ids for this session by scanning message history, grouped by subagent type. Each entry includes task_id, description, and last_used_at (Unix ms). Entries are deduplicated by task_id and sorted by last_used_at descending (most recently used first). Use after compaction or whenever you need to verify active subagent session handles before dispatching. Absent types are omitted.",
       args: {},
       async execute(_args: any, context: any) {
         try {

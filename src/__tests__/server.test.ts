@@ -114,8 +114,8 @@ describe("server compaction hooks", () => {
     const output = JSON.parse(await hooks.tool.get_task_ids.execute({}, { sessionID: "ses_tasks" }));
 
     expect(output).toEqual({
-      sidekick: [{ task_id: "ses_side123", description: "sidekick work" }],
-      reviewer: [{ task_id: "ses_rev123", description: "reviewer review" }],
+      sidekick: [{ task_id: "ses_side123", description: "sidekick work", last_used_at: 0 }],
+      reviewer: [{ task_id: "ses_rev123", description: "reviewer review", last_used_at: 0 }],
     });
   });
 

@@ -216,7 +216,7 @@ describe("opencode-fusion e2e", () => {
       const getTaskIdsState = getTaskIdsPart.state as Record<string, unknown>;
       expect(getTaskIdsState.status).toBe("completed");
       const output = JSON.parse(getTaskIdsState.output as string);
-      expect(output.sidekick).toEqual([{ task_id: taskId, description: "sidekick id lookup" }]);
+      expect(output.sidekick).toEqual([{ task_id: taskId, description: "sidekick id lookup", last_used_at: expect.any(Number) }]);
       expect(output.reviewer).toBeUndefined();
     });
   }, 90_000);
