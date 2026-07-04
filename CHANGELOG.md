@@ -7,6 +7,61 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
+### Added
+
+- **Parallel investigation mode.** Fusion can now dispatch sidekick with
+  `background: true` to investigate independently while fusion pursues its own
+  line, then merge evidence and cross-check for contradictions. Reviewer can be
+  consulted in parallel for independent hypotheses. (`6ebe50b`)
+- **`get_task_ids` tool.** Deterministic fallback that scans message history and
+  returns all subagent `task_id`s grouped by type, newest-first, with the last
+  dispatch description. Used to recover task_ids after compaction when the
+  pre-compaction injection is insufficient. (`2140940`, `f691875`)
+- **`session_history` tool.** Replaces `recall_history` with a richer API:
+  `operation: "search"` (query, kind, tool_name, role, time_after/time_before,
+  limit, offset) and `operation: "around"` (anchor message_id with before/after
+  context window). (`a9812be`)
+- **Auto-continue react cap.** Goal state now tracks a `react` counter;
+  auto-continue marks the goal unmet and warns when `MAX_GOAL_REACT=12` is
+  exceeded. Goal state migrated v6 → v7. (`a9812be`)
+- **Image interpretation delegation.** Fusion prompt now delegates image
+  interpretation to sidekick when fusion cannot directly view images.
+  (`f05e928`)
+- **Evidence anchoring and stuck-state escalation.** Fusion prompt now enforces
+  grounding claims in verifiable evidence and explicit escalation when stuck
+  (revising the same point, going in circles). (`c0deb66`)
+- **Full-scope implementation enforcement.** Fusion prompt now requires
+  enumerating required behaviors as a checklist when dispatching sidekick, and
+  reading changed code before accepting completion. (`7313408`)
+
+### Changed
+
+- **Subagent tool surface shrunk.** Goal and task_id tools (`get_goal`,
+  `set_goal`, `update_goal`, `get_task_ids`) are now denied for sidekick and
+  reviewer via per-agent permissions. (`5ea926e`)
+- **READMEs rewritten.** Install-first structure, plain language, sidekick
+  diagram, cost data; fusion.md reviewer loop and milestone→todo refactored.
+  (`b96583d`, `32c4116`)
+- **task_id passing clarified in prompts.** `task_id` must be passed via the
+  `task` tool's parameter field, not embedded in prompt prose. (`e969bb7`)
+
+### Removed
+
+- **Post-compaction task_id injection.** The `session.compacted` recovery logic,
+  `activeCompactions` coordination, and `sentGoalContinuation` tracking removed
+  in favor of pre-compaction context injection via
+  `experimental.session.compacting`. (`2140940`, `92f64a9`)
+
+### Fixed
+
+- **Duplicate continuation after compact.** Promise coordination prevented the
+  post-compaction recovery prompt from firing alongside auto-continue.
+  (`0b804ea`)
+- **Goal tools visible to subagents.** Server now uses `permission` instead of
+  the deprecated `tools` field to hide goal tools from subagents. (`a083316`)
+
 ## [0.2.1] - 2026-07-03
 
 ### Changed
@@ -93,7 +148,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidekick delegation, reviewer loop, and goal-mode workflow orchestration.
 - npm package `@faceair/opencode-fusion` with `bun` build and test pipeline.
 
-[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/faceair/opencode-fusion/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/faceair/opencode-fusion/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/faceair/opencode-fusion/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/faceair/opencode-fusion/releases/tag/v0.1.0
