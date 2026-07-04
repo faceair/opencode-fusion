@@ -1,6 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { extractAllTaskIds } from "../taskid.js";
-import type { RecallMessage } from "../recall.js";
+import type { SessionMessage } from "../session-history.js";
 
 // Mirrors the real OpenCode ToolPart/ToolStateCompleted shape from
 // @opencode-ai/sdk types.gen.d.ts: state.output is a JSON string.
@@ -23,8 +23,8 @@ function realToolPart(name: string, input: unknown, output: unknown): unknown {
   };
 }
 
-function msg(parts: unknown[]): RecallMessage {
-  return { id: `msg-${Math.random()}`, type: "assistant", parts } as RecallMessage;
+function msg(parts: unknown[]): SessionMessage {
+  return { id: `msg-${Math.random()}`, type: "assistant", parts } as SessionMessage;
 }
 
 describe("extractAllTaskIds", () => {
@@ -76,7 +76,7 @@ describe("extractAllTaskIds", () => {
 
   it("skips non-task tool calls", () => {
     const messages = [
-      msg([realToolPart("recall_history", { subagent_type: "sidekick", description: "not task" }, { task_id: "ses_skip" })]),
+      msg([realToolPart("session_history", { subagent_type: "sidekick", description: "not task" }, { task_id: "ses_skip" })]),
     ];
 
     expect(extractAllTaskIds(messages)).toEqual({});

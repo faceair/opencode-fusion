@@ -126,14 +126,14 @@ describe("opencode-fusion e2e", () => {
     });
   }, 60_000);
 
-  it("recall_history with include_tool_output returns prior tool output", async () => {
+  it("session_history search with include_tool_output returns prior tool output", async () => {
     await withFusionEnv(async (env) => {
       // Turn 1: set a goal (creates tool output we can recall later).
       env.llm.tool("set_goal", { objective: "Goal to recall later" });
       const { sessionID } = await createAndPromptForTool(env, "set a goal for later recall", "set_goal");
 
-      // Turn 2: call recall_history with include_tool_output=true.
-      env.llm.tool("recall_history", { include_tool_output: true, limit: 10 });
+      // Turn 2: call session_history search with include_tool_output=true.
+      env.llm.tool("session_history", { operation: "search", include_tool_output: true, limit: 10, kind: ["tool_output"] });
       await env.client.session.promptAsync({
         path: { id: sessionID },
         body: {
@@ -143,16 +143,16 @@ describe("opencode-fusion e2e", () => {
         },
       } as any);
 
-      const recallPart = await waitForToolComplete(env.client, sessionID, "recall_history", 30_000);
-      const state = recallPart.state as Record<string, unknown>;
+      const historyPart = await waitForToolComplete(env.client, sessionID, "session_history", 30_000);
+      const state = historyPart.state as Record<string, unknown>;
       expect(state.status).toBe("completed");
       expect(typeof state.output).toBe("string");
 
-      // The recall output should include the set_goal tool evidence.
-      const recallOutput = state.output as string;
-      expect(recallOutput).toContain("set_goal");
+      // The session_history output should include the set_goal tool evidence.
+      const historyOutput = state.output as string;
+      expect(historyOutput).toContain("set_goal");
       // With include_tool_output=true, the prior tool output should appear.
-      expect(recallOutput).toContain("Goal to recall later");
+      expect(historyOutput).toContain("Goal to recall later");
     });
   }, 90_000);
 

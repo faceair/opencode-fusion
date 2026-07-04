@@ -9,6 +9,7 @@ export interface Goal {
   objective: string;
   plan: string | null;
   status: GoalStatus;
+  react: number;
   createdAt: number;
   updatedAt: number;
   completionEvidence: string | null;
@@ -17,12 +18,13 @@ export interface Goal {
 }
 
 interface GoalState {
-  version: 6;
+  version: 7;
   goals: Record<string, Goal>;
   lastCleanupAt?: number;
 }
 
-const GOAL_STATE_VERSION = 6;
+const GOAL_STATE_VERSION = 7;
+const MAX_REACT = 12;
 
 const MAX_PLAN_CHARS = 4000;
 const CLEANUP_INTERVAL = 30 * 24 * 3600;
@@ -52,6 +54,7 @@ function makeGoal(sessionID: string, objective: string, plan?: string): Goal {
     objective,
     plan: plan ? plan.slice(0, MAX_PLAN_CHARS) : null,
     status: "active",
+    react: 0,
     createdAt: now,
     updatedAt: now,
     completionEvidence: null,
@@ -64,6 +67,16 @@ async function readState(): Promise<GoalState> {
   try {
     const raw = await readFile(statePath(), "utf-8");
     const parsed = JSON.parse(raw);
+    if (parsed.version === GOAL_STATE_VERSION) return parsed as GoalState;
+    if (parsed.version === 6 && parsed.goals) {
+      const migrated: GoalState = { version: GOAL_STATE_VERSION, goals: {} };
+      for (const [id, g] of Object.entries(parsed.goals)) {
+        const goal = g as Goal & { react?: number };
+        migrated.goals[id] = { ...goal, react: goal.react ?? 0 };
+      }
+      await writeState(migrated);
+      return migrated;
+    }
     if (parsed.version !== GOAL_STATE_VERSION) return { version: GOAL_STATE_VERSION, goals: {} };
     return parsed as GoalState;
   } catch {
@@ -152,6 +165,19 @@ export async function markGoalUnmet(
   await writeState(state);
   return goal;
 }
+
+/** Increment the re-entry counter, returning the new count. */
+export async function bumpReact(sessionID: string): Promise<number> {
+  const state = await readState();
+  const goal = state.goals[sessionID];
+  if (!goal) return 0;
+  goal.react += 1;
+  goal.updatedAt = nowSeconds();
+  await writeState(state);
+  return goal.react;
+}
+
+export const MAX_GOAL_REACT = MAX_REACT;
 
 export function continuationPrompt(goal: Goal): string {
   return `Continue working toward the current goal: ${goal.objective}

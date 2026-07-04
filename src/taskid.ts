@@ -1,4 +1,4 @@
-import type { RecallMessage } from "./recall.js";
+import type { SessionMessage } from "./session-history.js";
 
 export interface TaskInfo {
   task_id: string;
@@ -58,12 +58,12 @@ function partTaskInfo(part: unknown): TaskInfo | null {
   return { task_id: taskId, description };
 }
 
-function messageParts(message: RecallMessage): unknown[] {
+function messageParts(message: SessionMessage): unknown[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 
 /** Extract all task_ids from task tool calls, grouped by subagent type, newest-first. */
-export function extractAllTaskIds(messages: RecallMessage[]): Record<string, TaskInfo[]> {
+export function extractAllTaskIds(messages: SessionMessage[]): Record<string, TaskInfo[]> {
   const result: Record<string, TaskInfo[]> = {};
   for (let i = messages.length - 1; i >= 0; i--) {
     const parts = messageParts(messages[i]);

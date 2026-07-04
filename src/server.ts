@@ -4,7 +4,18 @@ import type { OpencodeClient } from "@opencode-ai/sdk";
 
 import * as goal from "./goal.js";
 import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
-import { normalizeRecallLimit, normalizeRecallOffset, normalizeRecallRole, RECALL_ROLES, recallMessages, type RecallMessage } from "./recall.js";
+import {
+  aroundMessages,
+  normalizeSessionHistoryAround,
+  normalizeSessionHistoryKinds,
+  normalizeSessionHistoryLimit,
+  normalizeSessionHistoryOffset,
+  normalizeSessionHistoryRole,
+  searchMessages,
+  SESSION_HISTORY_KINDS,
+  SESSION_HISTORY_ROLES,
+  type SessionMessage,
+} from "./session-history.js";
 import { extractAllTaskIds } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
@@ -55,38 +66,68 @@ const plugin: Plugin = async (input, options) => {
   const { sidekick, reviewer } = parseOptions(options);
   const client = input.client as OpencodeClient;
 
-  const recallTools = {
-    recall_history: {
+  const historyTools = {
+    session_history: {
       description:
-        "Recall prior messages from the current OpenCode session. Use after compaction or when you need exact earlier context. Optional query does a simple case-insensitive keyword filter over message text/tool names. Optional role filters by message type (e.g. role=user returns only user messages). By default tool outputs are summarized; set include_tool_output=true when you need exact tool results. Use offset to page backwards from the most recent messages (e.g. after a compaction, offset=10 limit=10 returns the 10 messages just before the most recent 10), which is useful for retrieving context adjacent to a compaction boundary without a search query. role, query, offset, and limit all compose: role+query both must match, then offset pages backwards over the matched set.",
+        "Inspect prior messages from the current OpenCode session. operation='search' lists or filters messages by query, role, kind, tool_name, time range, limit, and offset. operation='around' returns context before and after a message_id. By default tool outputs are summarized; set include_tool_output=true only when exact tool output is needed.",
       args: {
+        operation: z.enum(["search", "around"]).optional().describe("search = search/list messages in current session (default); around = get context around a specific message_id."),
         query: z.string().min(1).max(500).optional().describe("Optional case-insensitive keyword filter."),
-        role: z.enum(RECALL_ROLES).optional().describe("Optional message-type filter: user, assistant, system, shell, synthetic, agent-switched, model-switched, compaction."),
+        kind: z.array(z.enum(SESSION_HISTORY_KINDS)).optional().describe("Optional part-kind filter. Matches messages containing at least one of: user_text, assistant_text, tool_input, tool_output, tool_error, reasoning."),
+        tool_name: z.string().min(1).max(100).optional().describe("Optional filter to messages containing a specific tool name, e.g. bash or read."),
+        role: z.enum(SESSION_HISTORY_ROLES).optional().describe("Optional message role filter: user or assistant."),
+        time_after: z.number().optional().describe("Optional Unix ms timestamp; return messages created after this time."),
+        time_before: z.number().optional().describe("Optional Unix ms timestamp; return messages created before this time."),
         limit: z.number().int().min(1).max(80).optional().describe("Maximum matching messages to return; default 20, max 80."),
         offset: z.number().int().min(0).max(500).optional().describe("Number of most recent matched messages to skip before taking the limit window. 0 (default) returns the most recent matches; increasing offset pages backwards in time. Useful for retrieving messages adjacent to a compaction boundary."),
         include_tool_output: z.boolean().optional().describe("Include tool output content. Default false to keep recall quiet."),
+        message_id: z.string().min(1).optional().describe("Required when operation='around': anchor message ID."),
+        before: z.number().int().min(0).max(50).optional().describe("For operation='around': number of messages before anchor; default 5."),
+        after: z.number().int().min(0).max(50).optional().describe("For operation='around': number of messages after anchor; default 5."),
       },
       async execute(args: any, context: any) {
-        const limit = normalizeRecallLimit(args.limit);
-        const offset = normalizeRecallOffset(args.offset);
-        const role = normalizeRecallRole(args.role);
+        const operation = args.operation === "around" ? "around" : "search";
+        const limit = normalizeSessionHistoryLimit(args.limit);
+        const offset = normalizeSessionHistoryOffset(args.offset);
+        const role = normalizeSessionHistoryRole(args.role);
         let raw: any;
         try {
           raw = await client.session.messages({
             path: { id: context.sessionID },
-            query: { limit: Math.max(limit * 4 + offset * 2, 80) },
+            query: { limit: operation === "around" ? 200 : Math.max(limit * 4 + offset * 2, 80) },
           } as any);
         } catch (error) {
           throw new Error(
-            `Failed to recall OpenCode session history for session ${context.sessionID}: ${
+            `Failed to inspect OpenCode session history for session ${context.sessionID}: ${
               error instanceof Error ? error.message : String(error)
             }`,
           );
         }
-        const data = (raw?.data ?? raw) as RecallMessage[];
+        const data = (raw?.data ?? raw) as SessionMessage[];
+        if (operation === "around") {
+          if (typeof args.message_id !== "string" || !args.message_id) {
+            return JSON.stringify({ error: "message_id is required for operation='around'" }, null, 2);
+          }
+          return JSON.stringify(
+            aroundMessages(
+              data,
+              args.message_id,
+              normalizeSessionHistoryAround(args.before),
+              normalizeSessionHistoryAround(args.after),
+              args.include_tool_output === true,
+              context.sessionID,
+            ),
+            null,
+            2,
+          );
+        }
         return JSON.stringify(
-          recallMessages(data, {
+          searchMessages(data, {
             query: args.query,
+            kind: normalizeSessionHistoryKinds(args.kind) ?? undefined,
+            toolName: args.tool_name,
+            timeAfter: typeof args.time_after === "number" ? args.time_after : undefined,
+            timeBefore: typeof args.time_before === "number" ? args.time_before : undefined,
             limit,
             offset,
             role,
@@ -168,7 +209,7 @@ const plugin: Plugin = async (input, options) => {
             path: { id: context.sessionID },
             query: { limit: 80 },
           } as any);
-          const data = (raw?.data ?? raw) as RecallMessage[];
+          const data = (raw?.data ?? raw) as SessionMessage[];
           return JSON.stringify(extractAllTaskIds(data), null, 2);
         } catch (error) {
           return JSON.stringify({
@@ -252,7 +293,7 @@ const plugin: Plugin = async (input, options) => {
 
     tool: {
       ...goalTools,
-      ...recallTools,
+      ...historyTools,
       ...taskTools,
     } as any,
 
@@ -274,6 +315,19 @@ const plugin: Plugin = async (input, options) => {
         const currentGoal = await goal.getGoal(sessionID);
         if (currentGoal?.status !== "active") return;
         if (await shouldSkipAutoContinue(sessionID)) return;
+        const react = await goal.bumpReact(sessionID);
+        if (react > goal.MAX_GOAL_REACT) {
+          await goal.markGoalUnmet(sessionID, `Auto-continue stopped after max retry cap (${goal.MAX_GOAL_REACT}).`);
+          await input.client.app?.log?.({
+            body: {
+              service: "opencode-fusion",
+              level: "warn",
+              message: "Auto-continue stopped after max react cap",
+              extra: { sessionID, react, maxReact: goal.MAX_GOAL_REACT },
+            },
+          });
+          return;
+        }
         await sendContinuation(sessionID, goal.continuationPrompt(currentGoal));
       } catch (error) {
         await input.client.app?.log?.({
