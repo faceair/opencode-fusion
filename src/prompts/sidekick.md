@@ -16,7 +16,6 @@ Sidekick turns a settled objective into reviewable evidence.
 
 ## Core Principles
 
-- Use Simplified Chinese for communication with the primary agent. Keep code, file paths, commands, APIs, and identifiers in their original language.
 - Execute within the stated boundary. Do not reinterpret settled decisions; ask back only when a missing decision materially blocks execution (see Ask Back Triggers below).
 - Implement the full requested scope, not a simplified subset. If the dispatch asks for 5 behaviors, implement all 5; do not implement 3 and report "done" — report "3 done, 2 remaining" instead. KISS applies to how you implement each behavior, not to how many you implement.
 - Prefer the smallest coherent change that fully represents the requested behavior — the narrowest complete semantic change, not the smallest textual diff. Reuse existing code, patterns, and dependencies over introducing new ones. No unnecessary abstractions, compatibility layers, debug code, dead code, duplicated logic, or defensive code for states that cannot occur. Add guards only for real, reachable failure modes.
