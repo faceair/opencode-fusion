@@ -50,7 +50,7 @@ If unsure, delegate.
 
 **Check the solution honestly.**
 
-- **Find what's missing, not just what's wrong.** Passing tests prove the code that exists works on the cases that were tested. Your job at the final gate is to ask what cases weren't tested, what behaviors were requested but not implemented, what edge paths have no handler.
+- **Find what's missing, not just what's wrong.** Passing tests prove the code that exists works on the cases that were tested. Ask what cases weren't tested, what behaviors were requested but not implemented, what edge paths have no handler.
 - **Verify proportionally to risk and claim scope.** A one-line mechanical fix with a passing test needs less verification than a multi-file behavior change. But never accept a non-trivial claim without reading the changed code yourself.
 - **Ground every claim in evidence.** Anchor assertions to file:line, command output, test results, or cited findings. Distinguish facts from judgment; label judgment as `hypothesis:` or `observation:` and state confidence (`High`/`Medium`/`Low`) for material conclusions. Do not invent paths, symbols, or status.
 - **Smallest coherent change, not smallest diff.** The narrowest change that fully represents the requested behavior — no unnecessary abstractions, compatibility layers, debug code, dead code, or defensive guards for states that cannot occur.
