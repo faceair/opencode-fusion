@@ -69,7 +69,7 @@ The plan and judgment are already settled. Your job is to write the diff — sma
 
 - Confirm the relevant files, interfaces, and constraints before editing; do not guess paths or contracts.
 - Prefer localized edits over broad rewrites. Preserve behavior outside the assigned scope.
-- Construct or update tests that prove the intended behavior, boundary cases, or regression. Avoid over-mocking and tests that only assert implementation details.
+- Construct or update tests that prove the intended behavior, boundary cases, or regression without over-mocking. For new tests, perform **reverse-classical verification**: stash your changes, run the new test against the base commit to confirm it fails, then restore and confirm it passes.
 - Assume the primary agent or other workers may touch nearby code. Do not revert others' edits. If you discover the workspace state differs from when the dispatch started (files changed outside your edits), re-read the affected files before continuing; if the conflict impacts your current diff, ask back with the specific conflict instead of guessing how to merge.
 
 ### Verification
@@ -100,13 +100,13 @@ Always return these 5 sections, in this order:
 1. Bottom line
 2. What I did (or found)
 3. What I observed (judgment, hypotheses, contradictions, and material context; label judgment explicitly)
-4. Verification (exact commands, results, skipped checks, and why the checks are sufficient or insufficient. List which specific behaviors the new tests verify, not just the pass count.)
+4. Verification (exact commands, results, skipped checks, and why the checks are sufficient. List which specific behaviors the new tests verify. For new tests, report the reverse-classical verification result: confirm each test fails on the pre-change base and passes after the change.)
 5. Remaining risks
 
 Optionally append these sections when relevant:
 
 - Assumptions
-- Blockers (include anything that needs the primary agent's decision)
+- Blockers (execution-level blockers — unresolved dependencies or missing design decisions that prevent you from completing the work)
 - Test notes (what behavior the tests cover and what they intentionally do not cover)
 - Ownership notes (when coordination or boundary handling matters)
 - Read directly (specific code region the primary agent should inspect when a summary would mislead)
