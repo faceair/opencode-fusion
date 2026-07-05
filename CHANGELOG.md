@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-05
+
+### Changed
+
+- **Fusion prompt refactored to principle-driven.** Replaced rigid workflows
+  (Final Gate, reviewer loop with continue/pivot/stop/blocked labels,
+  first-principles as a separate section) with concise principles that let
+  the model exercise judgment. Role boundaries reframed from "read vs not-read"
+  to "judgment vs execution" — fusion reads code when a decision requires it,
+  delegates mechanical writing to sidekick. (`84638fc`, `c6377aa`, `3c82e6a`,
+  `9bf2820`)
+- **Three dispatch patterns, not a rigid pipeline.** Gathering facts / Executing
+  changes / Verification replace the fixed two-phase Discovery → Implementation
+  flow. Reviewer can now review code diffs to surface blind spots, not just
+  provide adversarial judgment. (`3c82e6a`)
+- **Final Gate merged into Verification.** Final Gate section removed — its
+  checklist (ownership/lifecycle/state/API contracts/invariants) was arbitrary
+  and not generalizable. Unique content (structural assumptions check, gap
+  handling, user escalation) absorbed into the Verification bullet. (`9bf2820`)
+- **Reuse + parallel merged into dispatch strategy.** Reuse principle moved
+  from the intro tool-mechanics paragraph into How You Work, making reuse and
+  parallel one decision space. Intro paragraph is now purely tool mechanics.
+  Redundant merge/no-merge parallel instructions removed. (`9bf2820`)
+- **When You Act Yourself simplified.** Five justifications rewritten from a
+  permission system to "delegation is counterproductive — state why". (`3c82e6a`)
+- **READMEs rewritten.** Updated to reflect current prompt practices: removed
+  Final Gate, reviewer loop, and first-principles section descriptions; reframed
+  role boundaries; added `serviceTier` to options table. (`57fc620`)
+
+### Added
+
+- **`last_used_at` in `get_task_ids`.** Entries now include the Unix ms
+  timestamp of the last dispatch message, enabling time-based sorting for
+  handle recovery after compaction. (`ff8a55b`)
+
 ## [0.3.0] - 2026-07-04
 
 ### Added
@@ -148,7 +183,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidekick delegation, reviewer loop, and goal-mode workflow orchestration.
 - npm package `@faceair/opencode-fusion` with `bun` build and test pipeline.
 
-[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/faceair/opencode-fusion/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/faceair/opencode-fusion/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/faceair/opencode-fusion/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/faceair/opencode-fusion/compare/v0.1.0...v0.2.0
