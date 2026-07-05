@@ -44,7 +44,7 @@ Add this to your shell config (e.g. `~/.config/fish/config.fish` or `~/.bashrc`)
 |--------|-------|-------------|
 | `model` | sidekick, reviewer | Model in `provider/model-id` format |
 | `variant` | sidekick, reviewer | Reasoning effort (`low`, `medium`, `high`, `xhigh`) |
-| `options` | sidekick, reviewer | Provider-specific options |
+| `options` | sidekick, reviewer | Provider-specific options (e.g. `serviceTier`) |
 
 If `model` is omitted, the agent inherits the session's current model. If you don't want Fusion as your default agent, omit `default_agent` and select the `fusion` agent manually when needed.
 
@@ -60,16 +60,12 @@ A few common problems when using a single-model agent for engineering work:
 
 ## How it works
 
-Two parallel agents, each with its own tools and cached context. The main agent decides which work to give the sidekick and which to do itself:
-
-![Sidekick architecture: a frontier main agent and a small sidekick agent running in parallel, each with its own cached context](https://cognition.com/_next/static/media/sidekick-diagram.153unbtaywtzg.png)
-
-opencode-fusion adds a third read-only agent (reviewer) for independent review, plus a goal mode that keeps tasks moving. Three agents, each with its own model and context:
+Three agents, each with its own model and cached context:
 
 ```
 ┌─────────────────────────────────────────────────┐
 │  fusion (expensive model)                       │
-│  owns: decisions, final review, goals           │
+│  owns: decisions, judgment, final verification  │
 │                                                 │
 │  delegates via task() ──────────────┐           │
 │  consults via task() ───────────┐   │           │
@@ -77,70 +73,43 @@ opencode-fusion adds a third read-only agent (reviewer) for independent review, 
 │                    ┌──────────────┐ ┌─────────┐ │
 │                    │ reviewer     │ │ sidekick│ │
 │                    │ (read-only)  │ │ (cheap) │ │
-│                    │ risk review   │ │ execute ││
-│                    │ + adversarial │ │ discover││
-│                    │               │ │ verify  ││
+│                    │ adversarial  │ │ execute ││
+│                    │ review       │ │ discover││
+│                    │ + diff audit │ │ verify  ││
 │                    └──────────────┘ └─────────┘ │
 └─────────────────────────────────────────────────┘
 ```
 
-**fusion** is the main agent you talk to. It takes minimal actions — reads only what's necessary, makes the calls that need judgment, and delegates the rest by default. It owns understanding requirements, making decisions, and controlling delivery quality, doing the final review itself rather than letting sidekick do it.
+**fusion** is the main agent you talk to. It owns judgment and decisions — reads code when a decision requires it, makes architectural calls, and does the final verification of changed code before accepting it. It delegates mechanical execution by default, but never lets delegation block it from looking at implementation details when necessary to make a decision.
 
-**sidekick** handles the mechanical load: reading code, editing files, running tests, diagnosing failures. It returns locatable evidence and observations to fusion, not conclusions.
+**sidekick** is the execution partner. It reads code, gathers facts, writes implementation, runs tests, and diagnoses failures in its own cached context. It excels at local execution but lacks global architectural foresight — fusion owns the judgment, sidekick owns the mechanical work within boundaries fusion sets.
 
-**reviewer** is read-only. It reviews high-risk changes before implementation and does independent code review before delivery. For changes touching untrusted input, persistence, or concurrency, it walks each input path from an attacker's perspective.
+**reviewer** is the independent critic — read-only, non-binding. It reviews code changes and diffs to surface issues fusion missed, and provides adversarial judgment when fusion's thinking is stuck or uncertain. It's a critic, not an approver — fusion consults it to find blind spots, not to get permission.
 
-Both sidekick and reviewer keep their own persistent, cached context. Delegation doesn't trigger cache misses — that's the key difference from "ask another model" tools. fusion calls them via the `task` tool, gets back a `task_id`, and reuses it on follow-ups to continue the same thread.
+Both sidekick and reviewer keep their own persistent, cached context. Delegation doesn't trigger cache misses — that's the key difference from "ask another model" tools. fusion calls them via the `task` tool, gets back a `task_id`, and reuses it on follow-ups to continue the same thread. Tasks in the same domain go to the same sidekick to reuse cached context; parallel investigations run in separate sessions.
 
-### When to delegate to sidekick
+### How fusion decides
 
-This is not a single-prompt router that picks one model for the whole task. Fusion decides per-step which agent should do what:
+Fusion doesn't follow a rigid workflow. It aligns dispatch to the nature of the task:
 
-- **Hand off slow verification.** Sidekick runs the test suite while fusion moves on to the next decision.
-- **Take back judgment-heavy work.** When sidekick hits a decision point — API shape, error semantics, cross-module boundary — fusion takes it back instead of letting the cheap model guess.
-- **Send targeted follow-ups.** Sidekick found something unexpected? Fusion sends a focused question back instead of re-reading the code itself.
-- **Don't delegate when judgment is the deliverable.** Hard features that need subtle intent (e.g. cross-team search UI decisions) lose intent when delegated to a cheap model — the result comes out wrong.
+- **Gathering facts** — ask sidekick for specific references, definitions, caller locations, invariants. Not solutions. Audit the fact chain before deciding.
+- **Executing changes** — provide interface contracts, dependencies, and a behavior checklist. Don't write implementation internals — that's sidekick's space.
+- **Verification** — read the actual changed code, not the diff summary. Find what's missing: unhandled edge cases, behaviors requested but quietly omitted, critical paths with no test. For non-trivial changes, dispatch reviewer to review the diff independently.
+
+These are common patterns, not a rigid pipeline. When serial dispatch is too slow, fusion parallelizes — how to split the work is its call.
 
 ### When to consult reviewer
 
-Two scenarios:
+- **Before a high-risk implementation**, when fusion's thinking is stuck, uncertain, or would benefit from an adversarial perspective.
+- **During verification**, for any non-trivial change — reviewer reviews the diff independently and may catch blind spots fusion missed.
 
-**Before implementation**, when the change is high-risk: shared API contracts, cross-subsystem boundaries, lifecycle/concurrency/persistence semantics, security/credentials/privacy, production-critical paths, the same approach failing repeatedly, confidence still low after local verification.
-
-**Before delivery**, for any non-trivial change, reviewer does a code review pass: correctness, completeness, regressions, architectural coherence. For high-risk changes, it also performs adversarial review — probing the diff from an attacker's perspective:
-
-- *What if this input is 50MB instead of 5KB?*
-- *What if a timestamp comes from the future?*
-- *What if a background worker gets killed mid-task and retries?*
-- *What if two users submit the same request simultaneously?*
-
-Each finding traces the full path: entry point → processing → storage → output → side effects.
+If fusion and reviewer disagree, fusion remains the decision owner. It doesn't loop between reviewer and sidekick looking for consensus — that's decision avoidance dressed up as diligence.
 
 ### Goal mode with auto-continue
 
-Every delegated task gets a goal: one sentence for the objective, a short plan for background and approach. The goal persists to disk and survives two things that normally kill task momentum:
-
-**Context compaction.** When OpenCode compacts the session (which happens automatically on long tasks), subagent `task_id`s are recovered via `get_task_ids` after compaction. The goal itself is recovered through tool-result history and the `get_goal` tool, keeping goal visibility consistent with the todo list.
-
-**Process restart.** Goals are stored in a local JSON file. Kill the process, reboot your machine, come back tomorrow — `opencode run --continue` picks up the same session ID, and the goal is still there.
-
 Goals auto-continue until explicitly closed. The agent doesn't stop after one step and wait for you to type "continue". It keeps moving: updates todos via the built-in todo tool, delegates the next chunk to sidekick, reviews the result, and only closes the goal when the work is verified complete or a concrete blocker makes further progress impossible.
 
-### Reviewer loop for open-ended work
-
-Some tasks can't be fully planned upfront: performance optimization, ambiguous root-cause investigation, architecture cleanup. These use a reviewer loop:
-
-1. Complete a todo, bring evidence to reviewer
-2. Reviewer decides the next step: `continue` (same direction), `pivot` (change direction), `stop` (no meaningful next step), `blocked` (missing evidence or prerequisite)
-3. Execute the next step, loop back to reviewer
-4. Until reviewer says `stop` and the work is verified, or `blocked` with a concrete blocker
-
-### First principles
-
-When a bug fix, architecture decision, or approach choice is on the table, agents reason from fundamental facts and constraints instead of reaching for the closest pattern in training data.
-
-- *Symptom fix:* "The feed is broken, let me fix the fetcher." The same bug comes back next week.
-- *Root cause fix:* "The traffic routing layer has a latent failure mode. The fetcher was just the first victim. Fix the routing." The bug class is eliminated.
+Goals persist to disk and survive context compaction and process restarts. Subagent `task_id`s are recovered via `get_task_ids` after compaction.
 
 ## Good fit for
 
@@ -148,7 +117,7 @@ When a bug fix, architecture decision, or approach choice is on the table, agent
 - Complex debugging where the obvious fix treats the symptom
 - Multi-stage refactors with judgment-heavy decisions
 - High-risk changes that need independent review before shipping
-- Open-ended work where the next step can't be planned upfront and a reviewer loop helps converge
+- Open-ended work where the next step can't be planned upfront
 
 If you just want a lightweight chat assistant, this is probably overkill.
 
