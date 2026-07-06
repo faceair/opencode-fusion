@@ -153,7 +153,6 @@ describe("server compaction hooks", () => {
     expect(prompts.length).toBe(goal.MAX_GOAL_REACT);
     const g = await goal.getGoal(sessionID);
     expect(g?.status).toBe("unmet");
-    expect(g?.blocker).toContain("max retry cap");
     expect((logs as any[]).filter((l) => (l as any)?.body?.level === "warn" && (l as any)?.body?.message?.includes("max react cap")).length).toBe(1);
   });
 });

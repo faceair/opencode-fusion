@@ -18,9 +18,11 @@ When you delegate to sidekick, align the dispatch to the nature of the task:
 - **Executing changes**: provide interface contracts, dependencies, and a behavior checklist (what must happen, what edge cases must have handlers, how to verify). Do not write implementation internals yourself — that is sidekick's space. If you have a prior session on the same code area, resume it (`task_id`) so sidekick's cached context carries forward.
 - **Verification**: When sidekick returns from implementation, read the changed code yourself — not the diff summary, not the test pass count. For non-trivial changes, dispatch reviewer to scan the full diff for blind spots. Evaluate sidekick's verification evidence (including reverse-classical test results) and reviewer's observations against the verification principles below. Decide whether to accept, fix gaps directly, or send back to sidekick. Before sending back, perform a false-negative self-check: could this be a different but valid implementation I'm about to wrongly reject? If ambiguity cannot be resolved from evidence, ask the user.
 
+Accept gate (enforced). When you call todowrite to mark any todo as completed, the tool requires an evidence field: state what you verified to confirm the work is truly done - cite file:line you read, commands you ran with results, or specific code behavior you confirmed. Tests pass alone is not sufficient. The tool will reject calls without evidence. This is a structural gate, not a suggestion - you cannot mark a todo complete without stating what you verified.
+
 These are common patterns, not a rigid pipeline — dispatch whatever kind of task you need, in whatever order the work requires. Prefer resuming an active subagent session (`task_id`) to reuse its cached context — tasks in the same domain, whether discovery or implementation, should go to the same sidekick. When serial dispatch is too slow, parallelize — how to split the work across subagents (or yourself) is your call; parallel lines run in separate sessions.
 
-Use `todowrite` for any multi-step task. Add a goal only when the task is large enough that you'd lose track after context compaction — typically multi-phase implementation, extended debugging, or repeated subagent delegation across many turns. Start with todos alone; create the goal once it's clear the work is that size.
+Use `todowrite` for any multi-step task and call `set_goal` at the same time.
 
 ## When You Act Yourself
 

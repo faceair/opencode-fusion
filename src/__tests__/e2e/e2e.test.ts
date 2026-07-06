@@ -228,7 +228,7 @@ describe("opencode-fusion e2e", () => {
       const { sessionID } = await createAndPromptForTool(env, "set a goal", "set_goal");
 
       // Turn 2: complete the goal.
-      env.llm.tool("update_goal", { status: "complete", evidence: "all tests pass" });
+      env.llm.tool("update_goal", { status: "complete" });
       await env.client.session.promptAsync({
         path: { id: sessionID },
         body: {
@@ -243,22 +243,22 @@ describe("opencode-fusion e2e", () => {
       expect(state.status).toBe("completed");
       const output = JSON.parse(state.output as string);
       expect(output.goal.status).toBe("complete");
-      expect(output.goal.completionEvidence).toBe("all tests pass");
+      expect(output.report).toBe("Goal achieved: Goal to complete");
 
       // Assert: goal state file shows complete.
       const goalFile = await readFile(env.goalStatePath, "utf-8");
       const goalState = JSON.parse(goalFile);
       expect(goalState.goals[sessionID].status).toBe("complete");
-      expect(goalState.goals[sessionID].completionEvidence).toBe("all tests pass");
+      expect(goalState.goals[sessionID].completionEvidence).toBeUndefined();
     });
   }, 90_000);
 
-  it("update_goal unmet records blocker in state file", async () => {
+  it("update_goal unmet closes goal in state file", async () => {
     await withFusionEnv(async (env) => {
       env.llm.tool("set_goal", { objective: "Goal that will be blocked" });
       const { sessionID } = await createAndPromptForTool(env, "set a goal", "set_goal");
 
-      env.llm.tool("update_goal", { status: "unmet", blocker: "missing dependency" });
+      env.llm.tool("update_goal", { status: "unmet" });
       await env.client.session.promptAsync({
         path: { id: sessionID },
         body: {
@@ -272,12 +272,12 @@ describe("opencode-fusion e2e", () => {
       const state = updatePart.state as Record<string, unknown>;
       const output = JSON.parse(state.output as string);
       expect(output.goal.status).toBe("unmet");
-      expect(output.goal.blocker).toBe("missing dependency");
+      expect(output.report).toBe("Goal unmet: Goal that will be blocked");
 
       const goalFile = await readFile(env.goalStatePath, "utf-8");
       const goalState = JSON.parse(goalFile);
       expect(goalState.goals[sessionID].status).toBe("unmet");
-      expect(goalState.goals[sessionID].blocker).toBe("missing dependency");
+      expect(goalState.goals[sessionID].blocker).toBeUndefined();
     });
   }, 90_000);
 

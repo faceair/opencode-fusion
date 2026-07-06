@@ -12,8 +12,6 @@ export interface Goal {
   react: number;
   createdAt: number;
   updatedAt: number;
-  completionEvidence: string | null;
-  blocker: string | null;
   closedAt: number | null;
 }
 
@@ -57,8 +55,6 @@ function makeGoal(sessionID: string, objective: string, plan?: string): Goal {
     react: 0,
     createdAt: now,
     updatedAt: now,
-    completionEvidence: null,
-    blocker: null,
     closedAt: null,
   };
 }
@@ -138,13 +134,11 @@ export async function createGoal(
 
 export async function completeGoal(
   sessionID: string,
-  evidence: string,
 ): Promise<Goal> {
   const state = await readState();
   const goal = state.goals[sessionID];
   if (!goal) throw new Error(`No goal for session ${sessionID}`);
   goal.status = "complete";
-  goal.completionEvidence = evidence;
   goal.closedAt = nowSeconds();
   goal.updatedAt = goal.closedAt;
   await writeState(state);
@@ -153,13 +147,11 @@ export async function completeGoal(
 
 export async function markGoalUnmet(
   sessionID: string,
-  blocker: string,
 ): Promise<Goal> {
   const state = await readState();
   const goal = state.goals[sessionID];
   if (!goal) throw new Error(`No goal for session ${sessionID}`);
   goal.status = "unmet";
-  goal.blocker = blocker;
   goal.closedAt = nowSeconds();
   goal.updatedAt = goal.closedAt;
   await writeState(state);
@@ -182,5 +174,5 @@ export const MAX_GOAL_REACT = MAX_REACT;
 export function continuationPrompt(goal: Goal): string {
   return `Continue working toward the current goal: ${goal.objective}
 
-Review your progress so far, identify the next concrete step, and execute it. If the goal is complete, call update_goal with status "complete" and evidence. If blocked, call update_goal with status "unmet" and the blocker.`;
+Review your progress so far, identify the next concrete step, and execute it. If the goal is complete, call update_goal with status "complete". If blocked, call update_goal with status "unmet".`;
 }

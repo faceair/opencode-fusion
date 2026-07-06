@@ -20,6 +20,7 @@ import { extractAllTaskIds } from "./taskid.js";
 import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
 import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
 import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
+import { toolDefinitionHook as acceptDefHook, toolExecuteBeforeHook as acceptExecHook } from "./accept.js";
 
 interface AgentConfig {
   model?: string;
@@ -173,24 +174,22 @@ const plugin: Plugin = async (input, options) => {
 
     update_goal: {
       description:
-        "Close the current goal. Use status 'complete' only when the objective is achieved and verified; include concrete evidence such as changed files, commands/results, and reviewer outcome when relevant. Use status 'unmet' only when the objective cannot be achieved or is blocked; include the concrete blocker or missing prerequisite. Do not close a goal merely because work is stopping, and complete/cancel milestones before closing when possible.",
+        "Close the current goal. Use status complete when the objective is achieved. Use status unmet when the objective cannot be achieved or is blocked. Do not close a goal merely because work is stopping.",
       args: {
         status: z.enum(["complete", "unmet"]).describe("complete = achieved; unmet = blocked or impossible."),
-        evidence: z.string().min(1).max(4000).optional().describe("Required when status is complete. State the verified evidence: key files/behavior changed, exact validation commands and pass results, and review evidence if applicable."),
-        blocker: z.string().min(1).max(4000).optional().describe("Required when status is unmet. State the concrete blocker, impossibility, or external prerequisite, plus the next action needed if known."),
       },
       async execute(args: any, context: any) {
         if (args.status === "complete") {
-          const g = await goal.completeGoal(context.sessionID, args.evidence ?? "");
+          const g = await goal.completeGoal(context.sessionID);
           return JSON.stringify(
-            { goal: g, report: `Goal achieved. Evidence: ${g.completionEvidence}.` },
+            { goal: g, report: `Goal achieved: ${g.objective}` },
             null,
             2,
           );
         }
-        const g = await goal.markGoalUnmet(context.sessionID, args.blocker ?? "");
+        const g = await goal.markGoalUnmet(context.sessionID);
         return JSON.stringify(
-          { goal: g, report: `Goal unmet. Blocker: ${g.blocker}.` },
+          { goal: g, report: `Goal unmet: ${g.objective}` },
           null,
           2,
         );
@@ -304,6 +303,14 @@ const plugin: Plugin = async (input, options) => {
       }
     },
 
+    async "tool.definition"(input, output) {
+      await acceptDefHook(input, output);
+    },
+
+    async "tool.execute.before"(input, output) {
+      await acceptExecHook(input, output);
+    },
+
     async event({ event }) {
       if (!isIdleEvent(event)) return;
       const sessionID = sessionIDFromEvent(event);
@@ -317,7 +324,7 @@ const plugin: Plugin = async (input, options) => {
         if (await shouldSkipAutoContinue(sessionID)) return;
         const react = await goal.bumpReact(sessionID);
         if (react > goal.MAX_GOAL_REACT) {
-          await goal.markGoalUnmet(sessionID, `Auto-continue stopped after max retry cap (${goal.MAX_GOAL_REACT}).`);
+          await goal.markGoalUnmet(sessionID);
           await input.client.app?.log?.({
             body: {
               service: "opencode-fusion",
