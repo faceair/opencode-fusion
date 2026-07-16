@@ -33,10 +33,10 @@ function msg(parts: unknown[], created = 0): SessionMessage {
 }
 
 describe("extractAllTaskIds", () => {
-  it("collects all sidekick and reviewer entries grouped by type, newest-first, with descriptions", () => {
+  it("collects all sidekick and scout entries grouped by type, newest-first, with descriptions", () => {
     const messages = [
       msg([realToolPart("task", { subagent_type: "sidekick", description: "old sidekick", prompt: "first" }, `<task id="ses_side_old" state="completed">old</task>`, { start: 100, end: 110 })]),
-      msg([realToolPart("task", { subagent_type: "reviewer", description: "reviewer review", prompt: "review" }, `<task id="ses_rev" state="completed">rev</task>`, { start: 200, end: 210 })]),
+      msg([realToolPart("task", { subagent_type: "scout", description: "scout work", prompt: "scout" }, `<task id="ses_scout" state="completed">scout</task>`, { start: 200, end: 210 })]),
       msg([realToolPart("task", { subagent_type: "sidekick", description: "new sidekick", prompt: "second" }, `<task id="ses_side_new" state="completed">new</task>`, { start: 300, end: 310 })]),
     ];
 
@@ -45,7 +45,7 @@ describe("extractAllTaskIds", () => {
         { task_id: "ses_side_new", description: "new sidekick", last_used_at: 310 },
         { task_id: "ses_side_old", description: "old sidekick", last_used_at: 110 },
       ],
-      reviewer: [{ task_id: "ses_rev", description: "reviewer review", last_used_at: 210 }],
+      scout: [{ task_id: "ses_scout", description: "scout work", last_used_at: 210 }],
     });
   });
 
@@ -53,13 +53,13 @@ describe("extractAllTaskIds", () => {
     const messages = [
       msg([
         realToolPart("task", { subagent_type: "sidekick", description: "side", prompt: "work" }, `<task id="ses_side" state="completed">side</task>`, { start: 10, end: 20 }),
-        realToolPart("task", { subagent_type: "reviewer", description: "review", prompt: "review" }, `<task id="ses_review" state="completed">review</task>`, { start: 30, end: 40 }),
+        realToolPart("task", { subagent_type: "scout", description: "scout", prompt: "scout" }, `<task id="ses_scout" state="completed">scout</task>`, { start: 30, end: 40 }),
       ]),
     ];
 
     expect(extractAllTaskIds(messages)).toEqual({
       sidekick: [{ task_id: "ses_side", description: "side", last_used_at: 20 }],
-      reviewer: [{ task_id: "ses_review", description: "review", last_used_at: 40 }],
+      scout: [{ task_id: "ses_scout", description: "scout", last_used_at: 40 }],
     });
   });
 
@@ -70,12 +70,12 @@ describe("extractAllTaskIds", () => {
   it("handles real-shape ToolPart state.output JSON string and XML output", () => {
     const messages = [
       msg([realToolPart("task", { subagent_type: "sidekick", description: "json output", prompt: "work" }, { task_id: "ses_json" }, { start: 50, end: 60 })]),
-      msg([realToolPart("task", { subagent_type: "reviewer", description: "xml output", prompt: "review" }, `<task id="ses_xml" state="completed">xml</task>`, { start: 70, end: 80 })]),
+      msg([realToolPart("task", { subagent_type: "scout", description: "xml output", prompt: "scout" }, `<task id="ses_xml" state="completed">xml</task>`, { start: 70, end: 80 })]),
     ];
 
     expect(extractAllTaskIds(messages)).toEqual({
       sidekick: [{ task_id: "ses_json", description: "json output", last_used_at: 60 }],
-      reviewer: [{ task_id: "ses_xml", description: "xml output", last_used_at: 80 }],
+      scout: [{ task_id: "ses_xml", description: "xml output", last_used_at: 80 }],
     });
   });
 

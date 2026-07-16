@@ -2,8 +2,6 @@ import { z } from "zod";
 import type { Plugin, PluginOptions, Hooks } from "@opencode-ai/plugin";
 import type { OpencodeClient } from "@opencode-ai/sdk";
 
-import * as goal from "./goal.js";
-import { shouldSkipAutoContinueForMessages, type AutoContinueMessage } from "./autocontinue.js";
 import {
   aroundMessages,
   normalizeSessionHistoryAround,
@@ -17,10 +15,8 @@ import {
   type SessionMessage,
 } from "./session-history.js";
 import { extractAllTaskIds } from "./taskid.js";
-import { SIDEKICK_SYSTEM_PROMPT } from "./sidekick.js";
-import { REVIEWER_SYSTEM_PROMPT } from "./reviewer.js";
-import { FUSION_SYSTEM_PROMPT } from "./fusion.js";
-import { toolDefinitionHook as acceptDefHook, toolExecuteBeforeHook as acceptExecHook } from "./accept.js";
+import FUSION_SYSTEM_PROMPT from "./prompts/fusion.md";
+import SIDEKICK_SYSTEM_PROMPT from "./prompts/sidekick.md";
 
 interface AgentConfig {
   model?: string;
@@ -30,41 +26,17 @@ interface AgentConfig {
 
 interface FusionOptions {
   sidekick?: AgentConfig;
-  reviewer?: AgentConfig;
 }
 
 function parseOptions(opts: PluginOptions | undefined) {
   const o = (opts ?? {}) as FusionOptions;
   return {
     sidekick: o.sidekick ?? {},
-    reviewer: o.reviewer ?? {},
   };
 }
 
-function isIdleEvent(event: any): boolean {
-  if (event.type === "session.idle") return true;
-  const status = event.properties?.status;
-  return (
-    event.type === "session.status" &&
-    typeof status === "object" &&
-    status !== null &&
-    status.type === "idle"
-  );
-}
-
-function sessionIDFromEvent(event: any): string | undefined {
-  const direct = event.properties?.sessionID;
-  if (typeof direct === "string") return direct;
-  const info = event.properties?.info;
-  if (info && typeof info === "object" && typeof info.sessionID === "string")
-    return info.sessionID;
-  return;
-}
-
-const activeContinuations = new Set<string>();
-
 const plugin: Plugin = async (input, options) => {
-  const { sidekick, reviewer } = parseOptions(options);
+  const { sidekick } = parseOptions(options);
   const client = input.client as OpencodeClient;
 
   const historyTools = {
@@ -141,62 +113,6 @@ const plugin: Plugin = async (input, options) => {
     },
   };
 
-  const goalTools = {
-    get_goal: {
-      description:
-        "Get the current goal for this session, including status, plan, and milestone progress from the OpenCode todo list. Use before continuing an existing objective, after compaction, or whenever goal state is uncertain.",
-      args: {},
-      async execute(_args: any, context: any) {
-        const g = await goal.getGoal(context.sessionID);
-        let todos: any[] = [];
-        try {
-          const result = await client.session.todo({
-            path: { id: context.sessionID },
-          }) as any;
-          todos = (result.data ?? result) as any[];
-        } catch {}
-        return JSON.stringify({ goal: g, milestones: todos }, null, 2);
-      },
-    },
-
-    set_goal: {
-      description:
-        "Set a goal for the current session. Fails if a non-complete goal already exists. After set_goal, immediately use todowrite to create concise, actionable milestones and keep them updated as work progresses.",
-      args: {
-        objective: z.string().min(1).max(4000).describe("One sentence stating the concrete target outcome. Do not include approach, step lists, implementation details, or verification commands."),
-        plan: z.string().max(4000).optional().describe("Short plan preserved across compaction. Prefer three compact sections: 背景 (context/constraints), 方案 (approach outline, not step-by-step), 完成标准 (what counts as done). Keep each section 1-3 lines."),
-      },
-      async execute(args: any, context: any) {
-        const g = await goal.createGoal(context.sessionID, args.objective, args.plan);
-        return JSON.stringify({ goal: g }, null, 2);
-      },
-    },
-
-    update_goal: {
-      description:
-        "Close the current goal. Use status complete when the objective is achieved. Use status unmet when the objective cannot be achieved or is blocked. Do not close a goal merely because work is stopping.",
-      args: {
-        status: z.enum(["complete", "unmet"]).describe("complete = achieved; unmet = blocked or impossible."),
-      },
-      async execute(args: any, context: any) {
-        if (args.status === "complete") {
-          const g = await goal.completeGoal(context.sessionID);
-          return JSON.stringify(
-            { goal: g, report: `Goal achieved: ${g.objective}` },
-            null,
-            2,
-          );
-        }
-        const g = await goal.markGoalUnmet(context.sessionID);
-        return JSON.stringify(
-          { goal: g, report: `Goal unmet: ${g.objective}` },
-          null,
-          2,
-        );
-      },
-    },
-  };
-
   const taskTools = {
     get_task_ids: {
       description:
@@ -219,40 +135,12 @@ const plugin: Plugin = async (input, options) => {
     },
   };
 
-  async function sendContinuation(sessionID: string, prompt: string) {
-    await client.session.promptAsync({
-      path: { id: sessionID },
-      body: { parts: [{ type: "text", text: prompt }] },
-    });
-  }
-
-  async function shouldSkipAutoContinue(sessionID: string): Promise<boolean> {
-    try {
-      const raw = await client.session.messages({
-        path: { id: sessionID },
-        query: { limit: 20 },
-      } as any);
-      const messages = (raw?.data ?? raw) as AutoContinueMessage[];
-      return shouldSkipAutoContinueForMessages(messages);
-    } catch (error) {
-      await input.client.app?.log?.({
-        body: {
-          service: "opencode-fusion",
-          level: "warn",
-          message: "Failed to inspect latest user message before auto-continue",
-          extra: { error: error instanceof Error ? error.message : String(error) },
-        },
-      });
-      return false;
-    }
-  }
-
   const hooks: Hooks = {
     async config(config) {
       const agent = (config.agent ?? {}) as Record<string, any>;
       agent.fusion = {
         description:
-          "Fusion workflow agent. Decision and review owner that delegates execution to sidekick and review to reviewer.",
+          "Fusion workflow agent. Decision owner that delegates bounded execution and discovery to sidekick.",
         mode: "primary",
         prompt: FUSION_SYSTEM_PROMPT,
       };
@@ -265,25 +153,6 @@ const plugin: Plugin = async (input, options) => {
         ...(Object.keys(sidekick.options ?? {}).length > 0 ? { options: sidekick.options } : {}),
         prompt: SIDEKICK_SYSTEM_PROMPT,
         permission: {
-          get_goal: "deny",
-          set_goal: "deny",
-          update_goal: "deny",
-          get_task_ids: "deny",
-        },
-      };
-      agent.reviewer = {
-        description:
-          "Independent review on bounded technical decisions where a second opinion is more valuable than immediate implementation. Read-only — it never implements or modifies files.",
-        mode: "subagent",
-        ...(reviewer.model ? { model: reviewer.model } : {}),
-        ...(reviewer.variant ? { variant: reviewer.variant } : {}),
-        ...(Object.keys(reviewer.options ?? {}).length > 0 ? { options: reviewer.options } : {}),
-        prompt: REVIEWER_SYSTEM_PROMPT,
-        permission: {
-          edit: "deny",
-          get_goal: "deny",
-          set_goal: "deny",
-          update_goal: "deny",
           get_task_ids: "deny",
         },
       };
@@ -291,64 +160,9 @@ const plugin: Plugin = async (input, options) => {
     },
 
     tool: {
-      ...goalTools,
       ...historyTools,
       ...taskTools,
     } as any,
-
-    async "experimental.compaction.autocontinue"(input, output) {
-      const g = await goal.getGoal(input.sessionID);
-      if (g?.status === "active") {
-        output.enabled = false;
-      }
-    },
-
-    async "tool.definition"(input, output) {
-      await acceptDefHook(input, output);
-    },
-
-    async "tool.execute.before"(input, output) {
-      await acceptExecHook(input, output);
-    },
-
-    async event({ event }) {
-      if (!isIdleEvent(event)) return;
-      const sessionID = sessionIDFromEvent(event);
-      if (!sessionID) return;
-      if (activeContinuations.has(sessionID)) return;
-
-      activeContinuations.add(sessionID);
-      try {
-        const currentGoal = await goal.getGoal(sessionID);
-        if (currentGoal?.status !== "active") return;
-        if (await shouldSkipAutoContinue(sessionID)) return;
-        const react = await goal.bumpReact(sessionID);
-        if (react > goal.MAX_GOAL_REACT) {
-          await goal.markGoalUnmet(sessionID);
-          await input.client.app?.log?.({
-            body: {
-              service: "opencode-fusion",
-              level: "warn",
-              message: "Auto-continue stopped after max react cap",
-              extra: { sessionID, react, maxReact: goal.MAX_GOAL_REACT },
-            },
-          });
-          return;
-        }
-        await sendContinuation(sessionID, goal.continuationPrompt(currentGoal));
-      } catch (error) {
-        await input.client.app?.log?.({
-          body: {
-            service: "opencode-fusion",
-            level: "error",
-            message: "Auto-continue failed",
-            extra: { error: error instanceof Error ? error.message : String(error) },
-          },
-        });
-      } finally {
-        activeContinuations.delete(sessionID);
-      }
-    },
   };
 
   return hooks;

@@ -1,7 +1,7 @@
 {
   "name": "@faceair/opencode-fusion",
   "version": "0.4.0",
-  "description": "Multi-model fusion plugin for OpenCode: goal mode, sidekick delegation, reviewer, and dynamic mid-session routing.",
+  "description": "Multi-model fusion plugin for OpenCode: goal mode, sidekick delegation, and dynamic mid-session routing.",
   "type": "module",
   "license": "MIT",
   "author": "faceair",
@@ -44,7 +44,7 @@
     "prepack": "bun run build",
     "prepublishOnly": "bun run typecheck && bun run test:unit",
     "test": "bun run test:unit",
-    "test:unit": "bun test src/__tests__/autocontinue.test.ts src/__tests__/session-history.test.ts src/__tests__/taskid.test.ts src/__tests__/server.test.ts",
+    "test:unit": "bun test src/__tests__/session-history.test.ts src/__tests__/taskid.test.ts src/__tests__/server.test.ts",
     "test:e2e": "bun run build && bun test src/__tests__/e2e/",
     "typecheck": "tsc --noEmit",
     "dev": "bun build ./src/server.ts --outdir ./dist --target bun --external @opencode-ai/plugin --external effect --external zod --watch"

@@ -97,7 +97,7 @@ export function normalizeSessionHistoryKinds(kind: unknown): SessionHistoryKind[
   return result.length > 0 ? [...new Set(result)] : null;
 }
 
-function asRecord(value: unknown): Record<string, unknown> | null {
+export function asRecord(value: unknown): Record<string, unknown> | null {
   return typeof value === "object" && value !== null ? value as Record<string, unknown> : null;
 }
 
@@ -195,7 +195,7 @@ export function createdAt(message: SessionMessage): number | null {
   return null;
 }
 
-function messageParts(message: SessionMessage): unknown[] {
+export function messageParts(message: SessionMessage): unknown[] {
   return Array.isArray(message.parts) ? message.parts : [];
 }
 

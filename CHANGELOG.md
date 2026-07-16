@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Fusion/Sidekick prompts aligned with the current bounded-responsibility
+  contract.** Fusion owns global decisions and the final gate while Sidekick
+  implements settled, self-contained responsibilities with one live writer per
+  file and explicit session reuse.
+
+### Removed
+
+- **Goal mode.** `get_goal`, `set_goal`, `update_goal` tools, goal state
+  persistence (`goal.ts`), auto-continue (`autocontinue.ts`), the
+  `experimental.compaction.autocontinue` hook, and the idle-event continuation
+  loop have been removed. The plugin no longer tracks goals or auto-continues
+  sessions.
+- **todowrite evidence gate.** The `accept.ts` module, `tool.definition` and
+  `tool.execute.before` hooks that enforced an `evidence` field on
+  `todowrite` completions have been removed.
+- **Reviewer agent.** The plugin now registers only Fusion and Sidekick;
+  reviewer configuration, prompts, exports, permissions, tests, and
+  documentation have been removed.
+
 ## [0.4.0] - 2026-07-05
 
 ### Changed

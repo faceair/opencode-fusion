@@ -56,7 +56,7 @@ function chunk(delta: Record<string, unknown>, finish?: string, usage?: Usage) {
   };
 }
 
-function isTitleRequest(body: unknown): boolean {
+export function isTitleRequest(body: unknown): boolean {
   try {
     return JSON.stringify(body).includes("Generate a title for this conversation");
   } catch {

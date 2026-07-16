@@ -1,15 +1,9 @@
-import type { SessionMessage } from "./session-history.js";
+import { asRecord, messageParts, type SessionMessage } from "./session-history.js";
 
 export interface TaskInfo {
   task_id: string;
   description: string | null;
   last_used_at: number;
-}
-
-function asRecord(value: unknown): Record<string, unknown> | null {
-  return typeof value === "object" && value !== null
-    ? (value as Record<string, unknown>)
-    : null;
 }
 
 function extractTaskId(value: unknown): string | null {
@@ -64,10 +58,6 @@ function partTaskInfo(part: unknown, messageCreatedAt: number): TaskInfo | null 
   const last_used_at =
     asTimestamp(time?.end) ?? asTimestamp(time?.start) ?? messageCreatedAt;
   return { task_id: taskId, description, last_used_at };
-}
-
-function messageParts(message: SessionMessage): unknown[] {
-  return Array.isArray(message.parts) ? message.parts : [];
 }
 
 /** Extract all task_ids from task tool calls, grouped by subagent type, newest-first. */

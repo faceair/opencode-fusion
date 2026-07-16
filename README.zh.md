@@ -2,7 +2,7 @@
 
 [English](README.md)
 
-一个 [OpenCode](https://opencode.ai) 插件。贵的模型做决策，便宜的模型干活，第三个模型独立审查。
+一个 [OpenCode](https://opencode.ai) 插件。贵的模型做决策，便宜的模型干活。
 
 灵感来自 Cognition 的 [Devin Fusion](https://cognition.com/blog/devin-fusion)，sidekick 架构来自他们。
 
@@ -19,9 +19,6 @@
         "sidekick": {
           "model": "provider/model-name",
           "variant": "medium"
-        },
-        "reviewer": {
-          "model": "provider/model-name"
         }
       }
     ]
@@ -42,9 +39,9 @@ export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 | 选项 | 适用 agent | 说明 |
 |------|-----------|------|
-| `model` | sidekick, reviewer | 模型，格式为 `provider/model-id` |
-| `variant` | sidekick, reviewer | 推理强度（`low`、`medium`、`high`、`xhigh`） |
-| `options` | sidekick, reviewer | provider 特定选项（如 `serviceTier`） |
+| `model` | sidekick | 模型，格式为 `provider/model-id` |
+| `variant` | sidekick | 推理强度（`low`、`medium`、`high`、`xhigh`） |
+| `options` | sidekick | provider 特定选项（如 `serviceTier`） |
 
 如果省略 `model`，agent 继承当前会话的模型。如果不想把 Fusion 设为默认 agent，可以省略 `default_agent`，需要时手动选择 `fusion` agent。
 
@@ -53,14 +50,12 @@ export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 用单模型 agent 做工程任务，几个常见问题：
 
 - 贵模型的时间花在跑测试、读文件上，浪费钱。全换成便宜模型，决策质量又不够。Cognition 的数据显示 sidekick 架构在保持前沿模型表现的同时降低 35% 成本；测试套件委托给 sidekick 能省 62%，机械移除类任务省 32%。
-- 一个模型写代码、审代码、批准代码，没有独立视角，容易漏掉边界情况。
 - "问另一个模型"类工具每次跨模型调用都丢掉上下文缓存，得重新付一遍完整 prompt 的费用。长任务里这笔账涨得很快。
-- 长任务做到一半停下来等你打"继续"。goal 会自动续跑，直到目标完成或明确阻塞。
-- 上下文压缩后丢掉之前的工作记忆。goal 持久化到磁盘，能扛住进程重启；subagent `task_id` 在压缩后恢复。
+- 上下文压缩后丢掉之前的工作记忆。subagent `task_id` 在压缩后通过 `get_task_ids` 恢复。
 
 ## 怎么工作
 
-三个 agent，各自独立的模型和上下文：
+两个 agent，各自独立的模型和上下文：
 
 ```
 ┌─────────────────────────────────────────────────┐
@@ -68,15 +63,14 @@ export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 │  负责：决策、判断、最终验证                       │
 │                                                 │
 │  通过 task() 委托 ────────────────┐              │
-│  通过 task() 咨询 ────────────┐   │              │
-│                               ▼   ▼              │
-│                   ┌──────────────┐ ┌─────────┐   │
-│                   │ reviewer     │ │ sidekick│   │
-│                   │（只读）       │ │（便宜） │   │
-│                   │ 对抗式审查    │ │ 执行    │   │
-│                   │ + diff 审计   │ │ 发现    │   │
-│                   │              │ │ 验证    │   │
-│                   └──────────────┘ └─────────┘   │
+│                                  ▼              │
+│                       ┌─────────────────┐       │
+│                       │ sidekick        │       │
+│                       │（便宜模型）      │       │
+│                       │ 执行            │       │
+│                       │ 发现            │       │
+│                       │ 验证            │       │
+│                       └─────────────────┘       │
 └─────────────────────────────────────────────────┘
 ```
 
@@ -84,9 +78,7 @@ export OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS=true
 
 **sidekick** 是执行伙伴。在独立的缓存上下文里读代码、收集事实、写实现、跑测试、定位失败。它擅长局部执行但缺乏全局架构视野——fusion 负责判断，sidekick 在 fusion 设定的边界内负责机械执行。
 
-**reviewer** 是独立批评者——只读、不约束。它审查代码改动和 diff 来发现 fusion 漏掉的问题，在 fusion 思考卡住或不确定时提供对抗性判断。它是批评者不是批准者——fusion 找它是为了发现盲点，不是为了获得许可。
-
-sidekick 和 reviewer 各自保持持久缓存上下文。委托不触发 cache miss——这是跟"问另一个模型"工具的关键区别。fusion 用 `task` 工具调用它们，拿到 `task_id` 后在后续调用中复用，继续同一个线程。同领域的任务交给同一个 sidekick 以复用缓存上下文；并行调查在独立 session 里运行。
+sidekick 保持持久缓存上下文。委托不触发 cache miss——这是跟"问另一个模型"工具的关键区别。fusion 用 `task` 工具调用它，拿到 `task_id` 后在后续调用中复用，继续同一个线程。同领域的任务交给同一个 sidekick 以复用缓存上下文；并行调查在独立 session 里运行。
 
 ### fusion 怎么决策
 
@@ -94,29 +86,14 @@ fusion 不走固定 workflow，按任务性质选择委派方式：
 
 - **收集事实**——让 sidekick 找具体的引用、定义、调用位置、不变量。不是要方案。决策前先审计事实链。
 - **执行改动**——提供接口契约、依赖、行为清单。不写实现 internals——那是 sidekick 的空间。
-- **验证**——读实际改动的代码，不是 diff 摘要。找漏掉的：未处理的边界情况、要求了但悄悄省略的行为、没有测试的关键路径。非平凡改动，派 reviewer 独立审 diff。
+- **验证**——读实际改动的代码，不是 diff 摘要。找漏掉的：未处理的边界情况、要求了但悄悄省略的行为、没有测试的关键路径。
 
 这些是常见模式，不是固定流水线。串行太慢就并行——怎么切自己定。
 
-### 什么时候找 reviewer
-
-- **高风险实现前**，fusion 思考卡住、不确定、或需要对抗性视角时。
-- **验证阶段**，任何非平凡改动——reviewer 独立审 diff，可能发现 fusion 漏掉的盲点。
-
-如果 fusion 和 reviewer 意见不一致，fusion 仍然是决策者。不会在 reviewer 和 sidekick 之间循环找共识——那是用勤奋包装的决策逃避。
-
-### Goal 模式 + 自动续命
-
-goal 自动续命直到显式关闭。agent 不会做完一步就停下来等你打"继续"。它持续推进：用内置 todo 工具更新 todo，把下一块工作委托给 sidekick，审查结果，只在工作验证完成或遇到明确 blocker 时才关闭 goal。
-
-goal 持久化到磁盘，能扛住上下文压缩和进程重启。subagent `task_id` 在压缩后通过 `get_task_ids` 恢复。
-
 ## 适合什么
 
-- 长任务，需要跨越上下文压缩和进程重启而不丢失线索
 - 复杂 debug，明显修复治标不治本
 - 多阶段重构，关键决策不想交给便宜模型
-- 高风险变更，交付前要独立审查
 - 开放性工作，下一步做什么没法预先规划
 
 如果只是随聊随停的轻量助手，这套可能太重了。

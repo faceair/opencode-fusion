@@ -24,7 +24,6 @@ if (!existsSync(OPENCODE_ENTRY)) {
 
 export interface FusionEnv {
   readonly home: string;
-  readonly goalStatePath: string;
   readonly llm: FakeLLM;
   readonly serverUrl: string;
   readonly client: OpencodeClient;
@@ -68,7 +67,6 @@ function testProviderConfig(llmUrl: string, modelLimit?: { context: number; outp
 
 function isolatedEnv(
   home: string,
-  goalStatePath: string,
   configJson: string,
   opts?: { enableAutoCompact?: boolean },
 ): Record<string, string> {
@@ -87,7 +85,6 @@ function isolatedEnv(
     OPENCODE_DISABLE_AUTOCOMPACT: "1",
     OPENCODE_DISABLE_MODELS_FETCH: "1",
     OPENCODE_AUTH_CONTENT: "{}",
-    FUSION_GOAL_STATE_PATH: goalStatePath,
   };
   if (opts?.enableAutoCompact) delete base.OPENCODE_DISABLE_AUTOCOMPACT;
   return base;
@@ -113,9 +110,8 @@ export async function withFusionEnv<T>(
   const llm = await startFakeLLM();
 
   const home = await mkdtemp(join(tmpdir(), "fusion-e2e-"));
-  const goalStatePath = join(home, "goals.json");
   const configJson = JSON.stringify(testProviderConfig(llm.url, opts?.modelLimit));
-  const env = isolatedEnv(home, goalStatePath, configJson, opts);
+  const env = isolatedEnv(home, configJson, opts);
 
   // Pre-create plugin dependencies in config directories so npm install is a no-op.
   // opencode walks these directories during config loading and tries to install
@@ -183,16 +179,13 @@ export async function withFusionEnv<T>(
   }
 
   try {
-    return await fn({ home, goalStatePath, llm, serverUrl, client, close });
+    return await fn({ home, llm, serverUrl, client, close });
   } finally {
     await close();
   }
 }
 
 // Helper: wait for a session to reach idle status by polling session.status.
-// Note: if the fusion plugin's auto-continue is active (goal is set), the
-// session may never go idle because the plugin sends a continuation prompt.
-// Use waitForToolComplete instead for tool-call assertions.
 export async function waitForIdle(client: OpencodeClient, sessionID: string, timeoutMs = 30_000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeoutMs) {
