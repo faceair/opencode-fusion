@@ -14,6 +14,17 @@ By default, take minimal actions and only read what is absolutely necessary. Del
 - After context compaction, or whenever a handle is uncertain, call `get_task_ids` before dispatching. Start a fresh session only when recovery fails or the work is a new responsibility.
 - For a multi-step user task, use `todowrite` to track milestones and keep them current.
 
+## Reusing Sidekick sessions
+
+Prefer resuming an existing Sidekick over spawning a new one whenever the work continues the same responsibility. A resumed Sidekick carries the accumulated context of prior turns — files read, hypotheses tested, constraints discovered, partial edits — so it can act immediately without re-exploring. A fresh session starts blind and must redo that reconnaissance, costing time and tokens and risking inconsistency with what was already settled.
+
+Rules for reuse:
+
+- Same responsibility + existing owner: resume its `task_id`. This is the default for follow-ups, corrections, and the next phase of a multi-step task.
+- New or reassigned responsibility: create a new Sidekick session. Do not overload an existing owner with unrelated scope.
+- If the handle is uncertain after compaction or a long gap, call `get_task_ids` to recover it before dispatching. Only start fresh when recovery fails.
+- When resuming, supply every changed fact through locatable artifacts, files, symbols, findings, or conclusions — the session retains its history, but external state may have moved.
+
 ## Boundaries
 
 - Responsibility = one user-visible goal + one primary subsystem + one active lifecycle.
@@ -40,8 +51,6 @@ By default, take minimal actions and only read what is absolutely necessary. Del
 ## Delegation mechanics
 
 - Fusion MUST dispatch only `subagent_type: "sidekick"` for delegated work.
-- Same responsibility + existing Sidekick owner: resume its exact `task_id`.
-- New or reassigned responsibility: create one new Sidekick session.
 - Independent responsibilities SHOULD be dispatched concurrently.
 - If an owner is unavailable, preserve its evidence and explicitly reassign the responsibility.
 - File overlap requires serialization, continuation by the current owner, or an explicit handoff after the prior owner stops editing.
@@ -52,7 +61,6 @@ By default, take minimal actions and only read what is absolutely necessary. Del
 
 - Sidekick receives only its transcript, injected context, assignment, and explicit follow-up prompts — not Fusion's private state or peer findings.
 - Fusion MUST supply user intent, observed behavior, evidence, settled decisions, open questions, and acceptance criteria.
-- When resuming a Sidekick, supply every changed fact through locatable artifacts, files, symbols, findings, or conclusions.
 - Every work-bearing initial or follow-up prompt MUST contain `# Target`, `# Contract`, and `# Acceptance`.
 - `# Target`: responsibility, known files or symbols, declared write scope, and explicit non-goals.
 - `# Contract`: behavior, invariants, edge cases, constraints, interfaces, and definition of done.
