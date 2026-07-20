@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-20
+
 ### Changed
 
 - **Fusion/Sidekick prompts aligned with the current bounded-responsibility
@@ -204,7 +206,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Sidekick delegation, reviewer loop, and goal-mode workflow orchestration.
 - npm package `@faceair/opencode-fusion` with `bun` build and test pipeline.
 
-[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/faceair/opencode-fusion/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/faceair/opencode-fusion/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/faceair/opencode-fusion/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/faceair/opencode-fusion/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/faceair/opencode-fusion/compare/v0.2.0...v0.2.1
